@@ -83,10 +83,10 @@ Once confirmed, provide a summary of the collected information and suggest next 
             # Validate university name
             if len(user_message) > 3 and not user_message.isdigit():
                 return user_message
-            elif field in ["C1", "C2"]:
-                # Validate course name
-                if len(user_message) > 3 and not user_message.isdigit():
-                    return user_message
+        elif field in ["C1", "C2"]:
+            # Validate course name
+            if len(user_message) > 3 and not user_message.isdigit():
+                return user_message
         return None
 
     def _get_next_field(self):
@@ -94,6 +94,11 @@ Once confirmed, provide a summary of the collected information and suggest next 
             if self.collected_info[field] is None:
                 return field
         return None
+
+    def _save_info(self):
+        # Save the collected information to a file or database
+        with open("collected_info.json", "w") as f:
+            json.dump(self.collected_info, f)
 
     def send_message(self, user_message):
         # Add user message to the conversation
@@ -110,6 +115,9 @@ Once confirmed, provide a summary of the collected information and suggest next 
             "model": self.model,
             "messages": self.messages,
             "stream": False,
+            "options": {
+                "temperature": 0.1,
+            },
         }
 
         headers = {
@@ -166,10 +174,11 @@ print("I will help you collect information about two universities and their cour
 print(
     "Type 'status' to see the current status, 'clear' to reset the conversation, or 'exit' to quit.\n"
 )
-print("Assistant: To get started, please provide the first piece of information. What is the current university you are enrolled in?\n")
+print(
+    "Assistant: To get started, please provide the first piece of information. What is the current university you are enrolled in?\n"
+)
 while True:
     user_input = input("You: ")
-    print(chat.collected_info)
     if user_input.lower() == "exit":
         print("Goodbye!")
         break
@@ -182,8 +191,7 @@ while True:
 
         if chat.is_collection_complete():
             print("All information has been collected.")
-            print()
-            continue
+        continue
     elif user_input.lower() == "clear":
         chat.clear_conversation()
         print("Conversation cleared. Ready to start again.")
@@ -193,8 +201,4 @@ while True:
     print(f"Assistant: {response}")
 
     if chat.is_collection_complete():
-        print("All information has been collected. Thank you!")
-        print("Here's a summary of the information collected:")
-        for field, value in chat.get_collected_info().items():
-            print(f"{field}: {value}")
-        print()
+        chat._save_info()
