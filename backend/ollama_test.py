@@ -95,7 +95,7 @@ Once confirmed, provide a summary of the collected information and suggest next 
                 return field
         return None
 
-    def _save_info(self):
+    def save_info(self):
         # Save the collected information to a file or database
         with open("collected_info.json", "w") as f:
             json.dump(self.collected_info, f)
@@ -201,4 +201,4 @@ while True:
     print(f"Assistant: {response}")
 
     if chat.is_collection_complete():
-        chat._save_info()
+        chat.save_info()
