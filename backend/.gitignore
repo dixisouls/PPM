@@ -132,10 +132,10 @@ dmypy.json
 .env.local
 .env.production
 
-# Database
+# Database and unwanted files
 *.db
 *.sqlite
-
+*.json
 # IDE
 .vscode/
 .idea/
