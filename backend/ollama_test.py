@@ -1,13 +1,14 @@
 import requests
 import json
 import re
-
+from weaviate_client import ConversationVectorDB
 
 class OllamaChat:
     def __init__(self, model="gemma3:4b", base_url="http://localhost:11434"):
         self.model = model
         self.base_url = base_url
         self.messages = []
+        self.db = ConversationVectorDB()
 
         self.collected_info = {
             "U1": None,
@@ -139,6 +140,7 @@ Once confirmed, provide a summary of the collected information and suggest next 
                 self.messages.append(
                     {"role": "assistant", "content": assisstant_content}
                 )
+                self.db.add_conversation_pair(user_message, assisstant_content)
                 return assisstant_content
             else:
                 return f"Error: {response.status_code} - {response.text}"
@@ -166,6 +168,10 @@ Once confirmed, provide a summary of the collected information and suggest next 
         # Check if all information has been collected
         return all(value is not None for value in self.collected_info.values())
 
+    def delete_conversation_db(self):
+        self.db.clear_all_conversations()
+        self.db.close()
+
 
 chat = OllamaChat()
 
@@ -181,6 +187,7 @@ while True:
     user_input = input("You: ")
     if user_input.lower() == "exit":
         print("Goodbye!")
+        chat.delete_conversation_db()
         break
     elif user_input.lower() == "status":
         print("Current collected information:")
