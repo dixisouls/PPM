@@ -149,11 +149,18 @@ Once confirmed, provide a summary of the collected information and suggest next 
             "collected_info": self.collected_info,
             "completion_time": datetime.now().isoformat(),
         }
-        with open(filename, "w") as f:
-            json.dump(data, f, indent=4)
+        try:
+            with open(filename, "w") as f:
+                json.dump(data, f, indent=4)
+            print(f"Saved collected information to {filename}")
+        except Exception as e:
+            print(f"Error saving info to file: {e}")
 
     def send_message(self, user_message: str) -> Tuple[str, bool]:
         """Send a message and return response with cache status"""
+        # Track completion status before processing message
+        was_complete_before = self.is_collection_complete()
+
         # Add user message to the conversation
         self.messages.append({"role": "user", "content": user_message})
 
@@ -173,6 +180,11 @@ Once confirmed, provide a summary of the collected information and suggest next 
             self.messages.append({"role": "assistant", "content": assistant_content})
             # Save to database
             self.db.add_conversation_pair(self.chat_id, user_message, assistant_content)
+
+            # Check if collection just became complete and save if so
+            if not was_complete_before and self.is_collection_complete():
+                self.save_info()
+
             return assistant_content, True
 
         data = {
@@ -208,6 +220,11 @@ Once confirmed, provide a summary of the collected information and suggest next 
                 self.db.add_conversation_pair(
                     self.chat_id, user_message, assistant_content
                 )
+
+                # Check if collection just became complete and save if so
+                if not was_complete_before and self.is_collection_complete():
+                    self.save_info()
+
                 return assistant_content, False
             else:
                 return f"Error: {response.status_code} - {response.text}", False
@@ -302,15 +319,34 @@ class OllamaChatManager:
         chat = self.get_or_create_chat(chat_id)
         return chat.search_similar_in_chat(query, limit)
 
+    def save_chat_info(self, chat_id: str) -> bool:
+        """Manually save collected info for a specific chat"""
+        try:
+            chat = self.get_or_create_chat(chat_id)
+            if chat.is_collection_complete():
+                chat.save_info()
+                return True
+            return False
+        except Exception as e:
+            print(f"Error saving chat info: {e}")
+            return False
+
     def close_chat(self, chat_id: str):
         """Close and remove chat from active chats"""
         if chat_id in self.active_chats:
-            self.active_chats[chat_id].close()
+            # Save info before closing if complete
+            chat = self.active_chats[chat_id]
+            if chat.is_collection_complete():
+                chat.save_info()
+            chat.close()
             del self.active_chats[chat_id]
 
     def close_all_chats(self):
         """Close all active chats"""
-        for chat in self.active_chats.values():
+        for chat_id, chat in self.active_chats.items():
+            # Save info before closing if complete
+            if chat.is_collection_complete():
+                chat.save_info()
             chat.close()
         self.active_chats.clear()
         self.db.close()
