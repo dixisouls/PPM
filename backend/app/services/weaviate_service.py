@@ -24,7 +24,7 @@ class ConversationVectorDB:
                 name=self.collection_name,
                 vectorizer_config=Configure.Vectorizer.text2vec_ollama(
                     api_endpoint="http://host.docker.internal:11434",
-                    model="snowflake-arctic-embed",
+                    model="nomic-embed-text",
                 ),
                 properties=[
                     Property(
@@ -84,7 +84,7 @@ class ConversationVectorDB:
                 query=query,
                 limit=limit,
                 filters=Filter.by_property("chat_id").equal(chat_id),
-                distance=0.5,
+                distance=0.25,
                 return_metadata=MetadataQuery(distance=True),
             )
 
