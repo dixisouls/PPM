@@ -197,25 +197,21 @@ const ChatApplication = () => {
         isLoading={isLoading}
       />
 
-      <div className="chat-container">
-        {isConnected && (
+      {isConnected ? (
+        <div className="chat-container">
           <ProgressTracker
             collectedInfo={collectedInfo}
             completionStatus={completionStatus}
           />
-        )}
 
-        <div className="chat-content">
-          <MessageList messages={messages} isLoading={isLoading} />
-          <div ref={messagesEndRef} />
-        </div>
+          <div className="chat-content">
+            <MessageList messages={messages} isLoading={isLoading} />
+            <div ref={messagesEndRef} />
+          </div>
 
-        {isConnected && (
           <MessageInput onSendMessage={sendMessage} disabled={isLoading} />
-        )}
-      </div>
-
-      {!isConnected && (
+        </div>
+      ) : (
         <div className="welcome-screen">
           <div className="welcome-content">
             <h1>University Course Advisor</h1>
