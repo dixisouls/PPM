@@ -53,7 +53,6 @@ Once confirmed, provide a summary of the collected information and suggest next 
 """
         # Initialize the conversation with the system message
         self._update_system_message()
-        print(f"Created new chat session: {self.chat_id[:8]}...")
 
     def _update_system_message(self):
         collected_str = ""
@@ -101,9 +100,6 @@ Once confirmed, provide a summary of the collected information and suggest next 
             if self.collected_info[field] is None:
                 return field
         return None
-    def _search_similar_in_chat(self, query):
-        """Search for similar conversations within this chat"""
-        return self.db.search_similar_conversations_in_chat(self.chat_id, query)
 
     def save_info(self):
         """Save the collected information to a file with chat ID"""
@@ -112,7 +108,7 @@ Once confirmed, provide a summary of the collected information and suggest next 
             "chat_id": self.chat_id,
             "created_at": self.created_at,
             "collected_info": self.collected_info,
-            "completion_time": datetime.now().isoformat()
+            "completion_time": datetime.now().isoformat(),
         }
         with open(filename, "w") as f:
             json.dump(data, f, indent=4)
@@ -120,7 +116,6 @@ Once confirmed, provide a summary of the collected information and suggest next 
     def send_message(self, user_message):
         # Add user message to the conversation
         self.messages.append({"role": "user", "content": user_message})
-        similar = self._search_similar_in_chat(user_message)
 
         next_field = self._get_next_field()
         if next_field:
@@ -129,14 +124,15 @@ Once confirmed, provide a summary of the collected information and suggest next 
                 # Store the extracted information
                 self.collected_info[next_field] = extracted_info
                 self._update_system_message()
+        # Check for similar conversations first
+        similar = self.search_similar_in_chat(user_message)
         if similar:
-            print("Found similar conversation in chat")
-            assistant_content = "[CACHED]"
-            assistant_content = assistant_content + similar[0]["assistant_response"]
-            print(assistant_content)
+            assistant_content = similar[0]["assistant_response"]
+            # Add assistant message to conversation
             self.messages.append({"role": "assistant", "content": assistant_content})
+            # Save to database
             self.db.add_conversation_pair(self.chat_id, user_message, assistant_content)
-            return assistant_content
+            return f"[CACHED] {assistant_content}"
 
         data = {
             "model": self.model,
@@ -168,7 +164,9 @@ Once confirmed, provide a summary of the collected information and suggest next 
                 )
 
                 # Save to database with chat ID
-                self.db.add_conversation_pair(self.chat_id, user_message, assistant_content)
+                self.db.add_conversation_pair(
+                    self.chat_id, user_message, assistant_content
+                )
                 return assistant_content
             else:
                 return f"Error: {response.status_code} - {response.text}"
@@ -177,6 +175,10 @@ Once confirmed, provide a summary of the collected information and suggest next 
         except requests.exceptions.RequestException as e:
             return f"Error: {str(e)}"
 
+    def search_similar_in_chat(self, query):
+        """Search for similar conversations within this chat"""
+        return self.db.search_similar_conversations_in_chat(self.chat_id, query)
+
     def get_collected_info(self):
         """Return the collected information"""
         return self.collected_info
@@ -184,6 +186,10 @@ Once confirmed, provide a summary of the collected information and suggest next 
     def is_collection_complete(self):
         """Check if all information has been collected"""
         return all(value is not None for value in self.collected_info.values())
+
+    def get_conversation_history(self):
+        """Retrieve the conversation history for this chat"""
+        return self.db.get_all_conversations(self.chat_id)
 
     def close(self):
         """Close the database connection"""
@@ -194,21 +200,34 @@ def main():
     """Simplified main function with automatic chat creation and streamlined flow"""
     print("Welcome to the University Course Advisor Assistant!")
     print("I'll help you collect information about your university courses.")
-    print("Type 'exit' to quit the application")
+    print("Type '/exit' to quit the application")
     print()
 
     # Automatically create a new chat session
     chat = OllamaChat()
 
-    print("Assistant: Hello! To get started, please tell me the name of your current university.")
+    print(
+        "Assistant: Hello! To get started, please tell me the name of your current university."
+    )
 
     while True:
         user_input = input(f"[{chat.chat_id[:8]}] You: ")
 
-        if user_input.lower() == "exit":
+        if user_input.lower() == "/exit":
             print(f"[{chat.chat_id[:8]}] Goodbye!")
             chat.close()
             break
+
+        if user_input.lower() == "/history":
+            # Display conversation history
+            history = chat.get_conversation_history()
+            print(f"[{chat.chat_id[:8]}] Conversation History:")
+            for msg in history:
+                print(f"Human: {msg['human_response']}")
+                print(f"Assistant: {msg['assistant_response']}")
+                print(f"Timestamp: {msg['timestamp']}")
+                print("---")
+            continue
 
         # Send message and get response
         response = chat.send_message(user_input)

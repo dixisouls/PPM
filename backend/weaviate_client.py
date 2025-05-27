@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 class ConversationVectorDB:
     """A class to manage conversation data in Weaviate with vector search capabilities"""
+
     def __init__(self):
         self.client = weaviate.connect_to_local()
         self.collection_name = "ollama_conversation"
@@ -23,15 +24,24 @@ class ConversationVectorDB:
                 name=self.collection_name,
                 vectorizer_config=Configure.Vectorizer.text2vec_ollama(
                     api_endpoint="http://host.docker.internal:11434",
-                    model="nomic-embed-text",
+                    model="snowflake-arctic-embed",
                 ),
                 properties=[
-                    Property(name="chat_id", data_type=DataType.UUID,skip_vectorization=True),
+                    Property(
+                        name="chat_id", data_type=DataType.UUID, skip_vectorization=True
+                    ),
                     Property(name="human_response", data_type=DataType.TEXT),
-                    Property(name="assistant_response", data_type=DataType.TEXT, skip_vectorization=True),
-                    Property(name="timestamp", data_type=DataType.DATE,skip_vectorization=True)
-                ]
-
+                    Property(
+                        name="assistant_response",
+                        data_type=DataType.TEXT,
+                        skip_vectorization=True,
+                    ),
+                    Property(
+                        name="timestamp",
+                        data_type=DataType.DATE,
+                        skip_vectorization=True,
+                    ),
+                ],
             )
             print(f"Collection '{self.collection_name}' created successfully.")
         except Exception as e:
@@ -44,7 +54,7 @@ class ConversationVectorDB:
         return chat_id
 
     def add_conversation_pair(
-            self, chat_id: str, human_response: str, assistant_response: str
+        self, chat_id: str, human_response: str, assistant_response: str
     ) -> bool:
         """Add a conversation pair to a specific chat session"""
         try:
@@ -63,7 +73,7 @@ class ConversationVectorDB:
             return False
 
     def search_similar_conversations_in_chat(
-            self, chat_id: str, query: str, limit: int = 1
+        self, chat_id: str, query: str, limit: int = 1
     ) -> List[Dict]:
         """Search for similar conversations within a specific chat session"""
         try:
@@ -73,22 +83,24 @@ class ConversationVectorDB:
             response = collection.query.near_text(
                 query=query,
                 limit=limit,
-                filters = Filter.by_property("chat_id").equal(chat_id),
-                distance=0.3,
-                return_metadata=MetadataQuery(distance=True)
+                filters=Filter.by_property("chat_id").equal(chat_id),
+                distance=0.5,
+                return_metadata=MetadataQuery(distance=True),
             )
 
             # Filter results to only this chat_id
             results = []
             for obj in response.objects:
-                results.append({
-                    "id": str(obj.uuid),
-                    "chat_id": obj.properties["chat_id"],
-                    "human_response": obj.properties["human_response"],
-                    "assistant_response": obj.properties["assistant_response"],
-                    "timestamp": obj.properties.get("timestamp", ""),
-                    "distance": obj.metadata.distance,
-                })
+                results.append(
+                    {
+                        "id": str(obj.uuid),
+                        "chat_id": obj.properties["chat_id"],
+                        "human_response": obj.properties["human_response"],
+                        "assistant_response": obj.properties["assistant_response"],
+                        "timestamp": obj.properties.get("timestamp", ""),
+                        "distance": obj.metadata.distance,
+                    }
+                )
             return results
         except Exception as e:
             print(f"Error searching similar conversations in chat: {e}")
@@ -100,17 +112,19 @@ class ConversationVectorDB:
             collection = self.client.collections.get(self.collection_name)
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("chat_id").equal(chat_id),
-                sort = Sort.by_property(name="timestamp", ascending=True)
+                sort=Sort.by_property(name="timestamp", ascending=True),
             )
             conversations = []
             for obj in response.objects:
-                conversations.append({
-                    "id": str(obj.uuid),
-                    "chat_id": obj.properties["chat_id"],
-                    "human_response": obj.properties["human_response"],
-                    "assistant_response": obj.properties["assistant_response"],
-                    "timestamp": obj.properties["timestamp"],
-                })
+                conversations.append(
+                    {
+                        "id": str(obj.uuid),
+                        "chat_id": obj.properties["chat_id"],
+                        "human_response": obj.properties["human_response"],
+                        "assistant_response": obj.properties["assistant_response"],
+                        "timestamp": obj.properties["timestamp"],
+                    }
+                )
             return conversations
         except Exception as e:
             print(f"Error retrieving conversations: {e}")
@@ -127,7 +141,6 @@ class ConversationVectorDB:
             print(f"Error clearing all conversations: {e}")
             return False
 
-
     def close(self):
         """Close the Weaviate client connection"""
         self.client.close()
@@ -142,12 +155,51 @@ if __name__ == "__main__":
 
     # Add some test conversations
     test_pairs = [
-        ("What is the best university for computer science?",
-         "Some top universities for computer science include MIT, Stanford, Carnegie Mellon, UC Berkeley, and Harvard."),
-        ("I want to study machine learning",
-         "For machine learning, consider universities with strong AI programs like Stanford, MIT, CMU, UC Berkeley, or Georgia Tech."),
-        ("Tell me about undergraduate computer science courses",
-         "Typical CS undergraduate courses include programming fundamentals, data structures, algorithms, computer systems, software engineering, databases, and mathematics."),
+        (
+            "SFSU",
+            """Okay, great! So we have your first university name: SFSU. 
+
+Now, could you please tell me what course you’re taking at SFSU? (C1)""",
+        ),
+        (
+            "MATH448",
+            """Perfect! So we have:
+
+*   First university name: SFSU
+*   First university course: MATH448
+
+Now, let’s move on to the second university. Could you please tell me the name of the second university you’re interested in? (U2)""",
+        ),
+        (
+            "UCSF",
+            """Excellent! That’s UCSF. 
+
+And finally, what course are you taking at UCSF? (C2)""",
+        ),
+        (
+            "CSC690",
+            """Fantastic! We’ve got everything we need. Let’s just confirm everything we’ve collected:
+
+*   First university name: SFSU
+*   First university course: MATH448
+*   Second university name: UCSF
+*   Second university course: CSC690
+
+Does that all sound correct?""",
+        ),
+        (
+            "Confirmed",
+            """Wonderful! 🎉
+
+Here’s a summary of the information we’ve collected:
+
+*   **First University:** San Francisco State University (SFSU)
+*   **First University Course:** MATH448
+*   **Second University:** University of California, San Francisco (UCSF)
+*   **Second University Course:** CSC690
+
+Do you want to review this one last time, or would you like me to suggest some next steps, such as exploring potential course overlaps or advising resources?""",
+        ),
     ]
 
     for human_msg, assistant_msg in test_pairs:
@@ -161,14 +213,6 @@ if __name__ == "__main__":
         print(f"Human: {result['human_response']}")
         print(f"Assistant: {result['assistant_response']}")
         print(f"Distance: {result['distance']}")
-        print("---")
-
-    messages = db.get_all_conversations(chat_id)
-    print(f"\n--- All conversations in chat {chat_id[:8]}... ---")
-    for msg in messages:
-        print(f"Human: {msg['human_response']}")
-        print(f"Assistant: {msg['assistant_response']}")
-        print(f"Timestamp: {msg['timestamp']}")
         print("---")
 
     db.close()
