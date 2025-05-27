@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from routers.chat import router as chat_router, chat_manager
+from app.routers.chat import router as chat_router, chat_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
