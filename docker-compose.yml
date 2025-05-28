@@ -1,0 +1,89 @@
+---
+
+services:
+  # Weaviate Vector Database
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.30.4
+    container_name: ppm_weaviate
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --scheme
+      - http
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      ENABLE_API_BASED_MODULES: "true"
+      ENABLE_MODULES: "text2vec-ollama,generative-ollama"
+      CLUSTER_HOSTNAME: "node1"
+    networks:
+      - ppm-network
+
+  # FastAPI Backend
+  backend:
+    image: dixisouls/ppm-backend:latest
+    container_name: ppm_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - PYTHONPATH=/app
+    depends_on:
+      - weaviate
+    restart: unless-stopped
+    volumes:
+      - collected_info:/app/collected_info
+    networks:
+      - ppm-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React Frontend - Using pre-built image
+  frontend:
+    image: dixisouls/ppm-frontend:latest
+    container_name: ppm_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - GENERATE_SOURCEMAP=false
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - ppm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  weaviate_data:
+    driver: local
+  collected_info:
+    driver: local
+
+networks:
+  ppm-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
