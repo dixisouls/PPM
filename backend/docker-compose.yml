@@ -26,9 +26,7 @@ services:
       - ppm-network
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: dixisouls/ppm-backend:latest
     ports:
       - "8000:8000"
     environment:
@@ -39,14 +37,10 @@ services:
       - weaviate
     restart: unless-stopped
     volumes:
-      # Mount for development (optional - remove in production)
-      - ./app:/app/app:ro
-      # Volume for collected info files
       - collected_info:/app/collected_info
     networks:
       - ppm-network
     extra_hosts:
-      # Allow container to access host services (like Ollama)
       - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
