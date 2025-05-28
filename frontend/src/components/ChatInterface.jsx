@@ -378,7 +378,7 @@ const ChatInterface = ({
 
       {/* Sidebar - Collected Information */}
       <motion.div
-        className={`bg-white border-l border-gray-200 transition-all duration-300 ${
+        className={`bg-white border-l border-gray-200 transition-all duration-300 h-screen overflow-hidden ${
           isCollapsed ? "w-16" : "w-80 lg:w-96"
         }`}
         initial={{ x: 100, opacity: 0 }}
@@ -386,10 +386,12 @@ const ChatInterface = ({
         transition={{ delay: 0.3 }}
       >
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-3 border-b border-gray-200">
           <div className="flex items-center justify-between">
             {!isCollapsed && (
-              <h3 className="text-lg font-semibold text-gray-900">Progress</h3>
+              <h3 className="text-base font-semibold text-gray-900">
+                Progress
+              </h3>
             )}
             <motion.button
               onClick={() => setIsCollapsed(!isCollapsed)}
@@ -398,26 +400,29 @@ const ChatInterface = ({
               whileTap={{ scale: 0.95 }}
             >
               {isCollapsed ? (
-                <Maximize2 className="w-5 h-5" />
+                <Maximize2 className="w-4 h-4" />
               ) : (
-                <Minimize2 className="w-5 h-5" />
+                <Minimize2 className="w-4 h-4" />
               )}
             </motion.button>
           </div>
         </div>
 
-        {/* Sidebar Content */}
-        <div className="p-4 h-full overflow-y-auto">
+        {/* Sidebar Content - Fixed height, no scroll */}
+        <div className="p-3 h-full flex flex-col">
           {!isCollapsed ? (
-            <CollectedInfo
-              collectedInfo={collectedInfo}
-              completionStatus={completionStatus}
-            />
+            <div className="flex-1 flex flex-col">
+              <CollectedInfo
+                collectedInfo={collectedInfo}
+                completionStatus={completionStatus}
+                className="flex-1"
+              />
+            </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 flex-1 flex flex-col items-center pt-4">
               {/* Collapsed Progress Indicator */}
               <motion.div
-                className="w-8 h-8 mx-auto bg-primary-100 rounded-full flex items-center justify-center"
+                className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center"
                 whileHover={{ scale: 1.1 }}
               >
                 <span className="text-primary-600 font-semibold text-xs">
@@ -427,38 +432,17 @@ const ChatInterface = ({
 
               {/* Completion Status Icon */}
               <motion.div
-                className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center ${
+                className={`w-6 h-6 rounded-full flex items-center justify-center ${
                   completionStatus.is_complete
                     ? "bg-green-100 text-green-600"
                     : "bg-orange-100 text-orange-600"
                 }`}
                 whileHover={{ scale: 1.1 }}
               >
-                <CheckCircle className="w-4 h-4" />
+                <CheckCircle className="w-3 h-3" />
               </motion.div>
             </div>
           )}
-        </div>
-
-        {/* End Chat Button - Always visible */}
-        <div className="p-4 border-t border-gray-200">
-          <motion.button
-            onClick={handleEndChat}
-            className={`w-full bg-red-500 hover:bg-red-600 text-white font-medium py-3 rounded-xl transition-all duration-200 ${
-              isCollapsed ? "px-2" : "px-6"
-            }`}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-          >
-            {isCollapsed ? (
-              <X className="w-5 h-5 mx-auto" />
-            ) : (
-              <span className="flex items-center justify-center space-x-2">
-                <X className="w-5 h-5" />
-                <span>End Chat</span>
-              </span>
-            )}
-          </motion.button>
         </div>
       </motion.div>
     </motion.div>
