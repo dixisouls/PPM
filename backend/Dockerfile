@@ -27,9 +27,11 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY app/ ./app/
 COPY *.py ./
 
-# Create non-root user
 RUN adduser --disabled-password --gecos '' --uid 1000 appuser \
+    && mkdir -p /app/collected_info \
     && chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
 # Expose port
