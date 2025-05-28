@@ -1,5 +1,6 @@
 import requests
 import json
+import os
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from .weaviate_service import ConversationVectorDB
@@ -8,7 +9,8 @@ from .weaviate_service import ConversationVectorDB
 class OllamaChat:
     def __init__(self):
         self.model = "gemma3:4b"
-        self.base_url = "http://localhost:11434"
+        # Get Ollama URL from environment variable, default to localhost
+        self.base_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         self.messages = []
         self.db = ConversationVectorDB()
 
@@ -71,9 +73,12 @@ Once confirmed, provide a summary of the collected information and suggest next 
         """Load an existing chat session"""
         try:
             self.chat_id = chat_id
+            # Create collected_info directory if it doesn't exist
+            os.makedirs("/app/collected_info", exist_ok=True)
+
             # Try to load existing collected info from a file
             try:
-                with open(f"collected_info_{chat_id}.json", "r") as f:
+                with open(f"/app/collected_info/collected_info_{chat_id}.json", "r") as f:
                     data = json.load(f)
                     self.collected_info = data.get("collected_info", {
                         "U1": None, "C1": None, "U2": None, "C2": None
@@ -142,14 +147,17 @@ Once confirmed, provide a summary of the collected information and suggest next 
 
     def save_info(self):
         """Save the collected information to a file with chat ID"""
-        filename = f"collected_info_{self.chat_id}.json"
-        data = {
-            "chat_id": self.chat_id,
-            "created_at": self.created_at,
-            "collected_info": self.collected_info,
-            "completion_time": datetime.now().isoformat(),
-        }
         try:
+            # Create collected_info directory if it doesn't exist
+            os.makedirs("/app/collected_info", exist_ok=True)
+
+            filename = f"/app/collected_info/collected_info_{self.chat_id}.json"
+            data = {
+                "chat_id": self.chat_id,
+                "created_at": self.created_at,
+                "collected_info": self.collected_info,
+                "completion_time": datetime.now().isoformat(),
+            }
             with open(filename, "w") as f:
                 json.dump(data, f, indent=4)
             print(f"Saved collected information to {filename}")

@@ -2,6 +2,7 @@ import weaviate
 from weaviate.classes.config import Configure, Property, DataType
 from weaviate.classes.query import Filter, MetadataQuery, Sort
 import uuid
+import os
 from typing import List, Dict
 from datetime import datetime, timezone
 
@@ -10,8 +11,46 @@ class ConversationVectorDB:
     """A class to manage conversation data in Weaviate with vector search capabilities"""
 
     def __init__(self):
-        self.client = weaviate.connect_to_local()
+        # Get Weaviate URL from environment variable, default to localhost
+        weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+
+        # Get Ollama URL from environment variable, default to localhost
+        ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+
+        # Parse the URL to get host and port
+        if "://" in weaviate_url:
+            protocol, rest = weaviate_url.split("://", 1)
+            is_secure = protocol == "https"
+
+            if ":" in rest:
+                host, port_str = rest.split(":", 1)
+                port = int(port_str)
+            else:
+                host = rest
+                port = 443 if is_secure else 8080
+        else:
+            # Fallback for malformed URLs
+            host = "localhost"
+            port = 8080
+            is_secure = False
+
+        # Connect to Weaviate using custom connection
+        try:
+            self.client = weaviate.connect_to_custom(
+                http_host=host,
+                http_port=port,
+                http_secure=is_secure,
+                grpc_host=host,
+                grpc_port=50051,
+                grpc_secure=is_secure
+            )
+            print(f"Connected to Weaviate at {host}:{port}")
+        except Exception as e:
+            print(f"Failed to connect to Weaviate at {host}:{port}: {e}")
+            raise
+
         self.collection_name = "ollama_conversation"
+        self.ollama_url = ollama_url
         self._setup_collection()
 
     def _setup_collection(self):
@@ -19,11 +58,16 @@ class ConversationVectorDB:
             if self.client.collections.exists(self.collection_name):
                 print(f"Collection '{self.collection_name}' already exists.")
                 return
+
+            # Use the ollama_url that was set in __init__
+            api_endpoint = self.ollama_url
+            print(f"Setting up collection with Ollama endpoint: {api_endpoint}")
+
             # Create a new collection with chat_id field
             self.client.collections.create(
                 name=self.collection_name,
                 vectorizer_config=Configure.Vectorizer.text2vec_ollama(
-                    api_endpoint="http://host.docker.internal:11434",
+                    api_endpoint=api_endpoint,
                     model="nomic-embed-text",
                 ),
                 properties=[
@@ -46,6 +90,7 @@ class ConversationVectorDB:
             print(f"Collection '{self.collection_name}' created successfully.")
         except Exception as e:
             print(f"Error creating collection: {e}")
+            raise
 
     def create_new_chat_session(self) -> str:
         """Create a new chat session and return its ID"""
@@ -54,7 +99,7 @@ class ConversationVectorDB:
         return chat_id
 
     def add_conversation_pair(
-        self, chat_id: str, human_response: str, assistant_response: str
+            self, chat_id: str, human_response: str, assistant_response: str
     ) -> bool:
         """Add a conversation pair to a specific chat session"""
         try:
@@ -73,7 +118,7 @@ class ConversationVectorDB:
             return False
 
     def search_similar_conversations_in_chat(
-        self, chat_id: str, query: str, limit: int = 1
+            self, chat_id: str, query: str, limit: int = 1
     ) -> List[Dict]:
         """Search for similar conversations within a specific chat session"""
         try:

@@ -10,8 +10,8 @@ services:
       - http
     image: cr.weaviate.io/semitechnologies/weaviate:1.30.4
     ports:
-      - 8080:8080
-      - 50051:50051
+      - "8080:8080"
+      - "50051:50051"
     volumes:
       - weaviate_data:/var/lib/weaviate
     restart: on-failure:0
@@ -22,5 +22,43 @@ services:
       ENABLE_API_BASED_MODULES: "true"
       ENABLE_MODULES: "text2vec-ollama,generative-ollama"
       CLUSTER_HOSTNAME: "node1"
+    networks:
+      - ppm-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - WEAVIATE_URL=http://weaviate:8080
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - PYTHONPATH=/app
+    depends_on:
+      - weaviate
+    restart: unless-stopped
+    volumes:
+      # Mount for development (optional - remove in production)
+      - ./app:/app/app:ro
+      # Volume for collected info files
+      - collected_info:/app/collected_info
+    networks:
+      - ppm-network
+    extra_hosts:
+      # Allow container to access host services (like Ollama)
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   weaviate_data:
+  collected_info:
+
+networks:
+  ppm-network:
+    driver: bridge

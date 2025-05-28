@@ -180,3 +180,5 @@ pids/
 # Alembic
 alembic/versions/*.py
 !alembic/versions/
+
+.dockerignore
