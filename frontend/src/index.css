@@ -59,6 +59,44 @@
     @apply bg-white text-gray-800 rounded-2xl rounded-bl-md px-4 py-3 max-w-sm shadow-soft border border-gray-100;
   }
 
+  /* Enhanced chat bubble styling for markdown content */
+  .chat-bubble-assistant .markdown-content {
+    @apply space-y-2;
+  }
+
+  .chat-bubble-assistant .markdown-content p {
+    @apply mb-2 last:mb-0;
+  }
+
+  .chat-bubble-assistant .markdown-content strong {
+    @apply font-semibold text-gray-900;
+  }
+
+  .chat-bubble-assistant .markdown-content ul {
+    @apply space-y-1 ml-2;
+  }
+
+  .chat-bubble-assistant .markdown-content li {
+    @apply flex items-start space-x-2;
+  }
+
+  .chat-bubble-assistant .markdown-content .bullet-point {
+    @apply text-primary-500 font-bold text-sm mt-0.5 flex-shrink-0;
+  }
+
+  .chat-bubble-assistant .markdown-content .bullet-content {
+    @apply flex-1;
+  }
+
+  /* Improved line spacing for formatted text */
+  .chat-bubble-assistant .formatted-line {
+    @apply mb-1 last:mb-0;
+  }
+
+  .chat-bubble-assistant .formatted-line:empty {
+    @apply mb-2;
+  }
+
   .btn-primary {
     @apply bg-primary-500 hover:bg-primary-600 text-white font-medium px-6 py-3 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-medium hover:shadow-large;
   }
@@ -85,5 +123,52 @@
 
   .typing-dot:nth-child(3) {
     animation-delay: 0.2s;
+  }
+
+  /* Animation for typing cursor */
+  .typing-cursor {
+    @apply inline-block w-0.5 h-4 bg-primary-500 ml-1;
+    animation: blink 1.2s infinite;
+  }
+
+  @keyframes blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    51%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* Smooth transitions for markdown content */
+  .markdown-content * {
+    @apply transition-opacity duration-200;
+  }
+
+  /* Better formatting for lists and structured content */
+  .chat-bubble-assistant .structured-content {
+    @apply space-y-3;
+  }
+
+  .chat-bubble-assistant .content-section {
+    @apply space-y-1;
+  }
+
+  .chat-bubble-assistant .section-title {
+    @apply font-medium text-gray-900 mb-1;
+  }
+
+  /* Responsive text sizing for better readability */
+  @media (max-width: 640px) {
+    .chat-bubble-user,
+    .chat-bubble-assistant {
+      @apply text-sm;
+    }
+
+    .chat-bubble-assistant .markdown-content {
+      @apply space-y-1.5;
+    }
   }
 }

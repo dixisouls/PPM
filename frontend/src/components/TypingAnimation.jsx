@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 const TypingAnimation = ({
   text,
-  speed = 50,
+  speed = 15, // Increased speed (reduced from 50 to 15)
   onComplete = () => {},
   className = "",
   showCursor = true,
@@ -20,7 +20,7 @@ const TypingAnimation = ({
       }, speed);
 
       return () => clearTimeout(timer);
-    } else if (!isComplete) {
+    } else if (!isComplete && text.length > 0) {
       setIsComplete(true);
       onComplete();
     }
@@ -40,13 +40,13 @@ const TypingAnimation = ({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
     >
-      <span>{displayedText}</span>
+      <span className="whitespace-pre-wrap">{displayedText}</span>
       {showCursor && (
         <motion.span
           className="inline-block w-0.5 h-5 bg-primary-500 ml-1"
           animate={{ opacity: [1, 0] }}
           transition={{
-            duration: 0.8,
+            duration: 0.6,
             repeat: isComplete ? 0 : Infinity,
             repeatType: "reverse",
           }}
