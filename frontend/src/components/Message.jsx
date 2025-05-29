@@ -48,7 +48,7 @@ const Message = ({
   // Use typing animation for assistant messages with markdown support
   const { displayedText, isComplete } = useMarkdownTyping(
     showTypingAnimation && !isUser ? message : "",
-    15, // Increased speed (reduced delay)
+    5, 
     () => console.log("Typing complete")
   );
 

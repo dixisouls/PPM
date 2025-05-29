@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 
 const TypingAnimation = ({
   text,
-  speed = 15, // Increased speed (reduced from 50 to 15)
+  speed = 10,
   onComplete = () => {},
   className = "",
   showCursor = true,
