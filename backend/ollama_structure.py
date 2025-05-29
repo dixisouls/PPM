@@ -29,16 +29,26 @@ class CollectedInfo(BaseModel):
 
 class InformationUpdate(BaseModel):
     """Model for extracting new information from user input"""
-    new_university: Optional[str] = Field(None, description="New university name mentioned")
+
+    new_university: Optional[str] = Field(
+        None, description="New university name mentioned"
+    )
     new_course: Optional[str] = Field(None, description="New course name mentioned")
-    field_to_update: Optional[str] = Field(None, description="Which field should be updated: u1, c1, u2, or c2")
-    confidence: float = Field(description="Confidence level 0-1 that information was extracted correctly")
+    field_to_update: Optional[str] = Field(
+        None, description="Which field should be updated: u1, c1, u2, or c2"
+    )
+    confidence: float = Field(
+        description="Confidence level 0-1 that information was extracted correctly"
+    )
 
 
 class AssistantResponse(BaseModel):
     """Complete response structure"""
+
     message: str = Field(description="Natural language response to user")
-    collected_info: CollectedInfo = Field(description="Current state of collected information")
+    collected_info: CollectedInfo = Field(
+        description="Current state of collected information"
+    )
     is_complete: bool = Field(description="Whether all information has been collected")
 
 
@@ -58,10 +68,10 @@ class SimpleInstructorChat:
         self.collected_info = CollectedInfo()
 
         self.field_names = {
-            "u1": "first university name",
-            "c1": "first university course",
-            "u2": "second university name",
-            "c2": "second university course"
+            "u1": "First University name",
+            "c1": "First University course",
+            "u2": "Second University name",
+            "c2": "Second University course",
         }
 
     def _extract_information(self, user_message: str) -> InformationUpdate:
@@ -69,22 +79,25 @@ class SimpleInstructorChat:
         current_state = self.collected_info.model_dump()
         next_field = self.collected_info.get_next_field()
 
+        if not next_field:
+            return InformationUpdate(confidence=0.0)
+
         prompt = f"""
-        Analyze this user message for {next_field} information: "{user_message}"
-        
+        Analyze this user message for information: "{user_message}"
+
         Current collected information:
         - First university (u1): {current_state['u1'] or 'Not collected'}
         - First course (c1): {current_state['c1'] or 'Not collected'}
         - Second university (u2): {current_state['u2'] or 'Not collected'}
         - Second course (c2): {current_state['c2'] or 'Not collected'}
-        
+
         Next field needed: {next_field} ({self.field_names.get(next_field, 'unknown')})
-        
+
         IMPORTANT RULES:
         - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned
         - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned
-        - Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "CSC690", "MATH448"  
-        - University examples: "Stanford", "MIT", "San Francisco State University"
+        - Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "Videography"
+        - University examples: "Stanford", "MIT", "San Francisco State University", "San Jose State University"
         - Set confidence HIGH (0.8+) if information is clearly present
         - Set field_to_update to: {next_field}
         - Focus ONLY on the next needed field type: {next_field}
@@ -95,9 +108,8 @@ class SimpleInstructorChat:
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 response_model=InformationUpdate,
-                temperature=0.0,
+                temperature=0.1,
             )
-            print(response)
             return response
         except Exception as e:
             print(f"Extraction error: {e}")
@@ -106,10 +118,25 @@ class SimpleInstructorChat:
     def _get_response_message(self, user_message: str) -> str:
         """Get natural language response"""
         next_field = self.collected_info.get_next_field()
-        next_name = self.field_names.get(next_field, "all information")
-
+        next_name = self.field_names.get(next_field, "All information collected")
+        # if next_field is None:
+        #     context = f"""
+        #     Currently collected:
+        #     - First university: {self.collected_info.u1}
+        #     - First course: {self.collected_info.c1}
+        #     - Second university: {self.collected_info.u2}
+        #     - Second course: {self.collected_info.c2}
+        #
+        #     If the user asks for summary of the collected information, provide it in a structured format.
+        #     Otherwise, do not provide any other information and just respond with a generic message saying: "We will get back to you soon with the information."
+        # """
+        # else:
         context = f"""
         You are here to collect information for course equivalence between two universities.
+        Your only task to to collect the information needed to compare courses.
+        Do not provide any other information or make assumptions about the user's intent.
+        Be friendly and professional.
+        Your primary goal is to collect the following information:
         
         Currently collected:
         - First university: {self.collected_info.u1 or 'Still needed'}
@@ -118,10 +145,12 @@ class SimpleInstructorChat:
         - Second course: {self.collected_info.c2 or 'Still needed'}
 
         Next information needed: {next_name}
-
-        Respond conversationally. Ask for the next piece of information if needed.
-        Be encouraging and helpful.
-        After you have all information, let the user know you have everything you need and will get back to them soon.
+        Don't make assumptions about the user's intent.
+        
+        If all information has been collected (i.e., next_name is "All information collected"), the response will be: "We will get back to you soon."
+        If the user then asks for a summary after all information is collected, return the summary all the information collected.
+        
+        
         """
 
         try:
@@ -129,10 +158,10 @@ class SimpleInstructorChat:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": context},
-                    {"role": "user", "content": user_message}
+                    {"role": "user", "content": user_message},
                 ],
                 response_model=None,
-                temperature=0.0,
+                temperature=0.5,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -144,12 +173,29 @@ class SimpleInstructorChat:
         if not self.collected_info.is_complete():
             extraction = self._extract_information(user_message)
 
+            if extraction.new_university is None and extraction.new_course is None and not self.collected_info.is_complete():
+                user_message = f"Invalid input by the user, ask for the next piece of information needed."
+
             # Update collected info if extraction is confident
             if extraction.confidence > 0.5 and extraction.field_to_update:
-                if extraction.new_university and extraction.field_to_update in ["u1", "u2"]:
-                    setattr(self.collected_info, extraction.field_to_update, extraction.new_university)
-                elif extraction.new_course and extraction.field_to_update in ["c1", "c2"]:
-                    setattr(self.collected_info, extraction.field_to_update, extraction.new_course)
+                if extraction.new_university and extraction.field_to_update in [
+                    "u1",
+                    "u2",
+                ]:
+                    setattr(
+                        self.collected_info,
+                        extraction.field_to_update,
+                        extraction.new_university,
+                    )
+                elif extraction.new_course and extraction.field_to_update in [
+                    "c1",
+                    "c2",
+                ]:
+                    setattr(
+                        self.collected_info,
+                        extraction.field_to_update,
+                        extraction.new_course,
+                    )
 
         # Get natural response
         message = self._get_response_message(user_message)
@@ -157,7 +203,7 @@ class SimpleInstructorChat:
         return AssistantResponse(
             message=message,
             collected_info=self.collected_info,
-            is_complete=self.collected_info.is_complete()
+            is_complete=self.collected_info.is_complete(),
         )
 
     def save_info(self) -> str:
@@ -166,7 +212,7 @@ class SimpleInstructorChat:
         data = {
             "chat_id": self.chat_id,
             "timestamp": datetime.now().isoformat(),
-            "collected_info": self.collected_info.model_dump()
+            "collected_info": self.collected_info.model_dump(),
         }
 
         with open(filename, "w") as f:
@@ -180,13 +226,15 @@ def main():
 
     chat = SimpleInstructorChat()
 
-    print("Assistant: Hi! I need to collect information about two universities and courses you're interested in.")
+    print(
+        "Assistant: Hi! I need to collect information about two universities and courses you're interested in."
+    )
     print("Let's start with the name of your first university.")
 
     while True:
         user_input = input(f"\nYou: ").strip()
 
-        if user_input.lower() == 'exit':
+        if user_input.lower() == "exit":
             print("Goodbye!")
             break
 
