@@ -161,7 +161,11 @@ class SimpleInstructorChat:
         if not self.collected_info.is_complete():
             extraction = self._extract_information(user_message)
 
-            if extraction.new_university is None and extraction.new_course is None and not self.collected_info.is_complete():
+            if (
+                extraction.new_university is None
+                and extraction.new_course is None
+                and not self.collected_info.is_complete()
+            ):
                 user_message = f"Invalid input by the user, ask for the next piece of information needed."
 
             # Update collected info if extraction is confident
@@ -194,7 +198,7 @@ class SimpleInstructorChat:
             is_complete=self.collected_info.is_complete(),
         )
 
-    def save_info(self) -> str:
+    def save_info(self):
         """Save collected information to JSON"""
         filename = f"collected_info_{self.chat_id}.json"
         data = {
