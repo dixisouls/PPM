@@ -108,6 +108,30 @@ const ChatInterface = ({
     }
   };
 
+  // Helper function to check if all required info is collected
+  const isAllInfoCollected = () => {
+    const requiredFields = ["U1", "C1", "U2", "C2"];
+    return requiredFields.every(
+      (field) => collectedInfo[field] && collectedInfo[field].trim() !== ""
+    );
+  };
+
+  // Helper function to get appropriate placeholder text
+  const getPlaceholderText = () => {
+    // If completion status indicates complete OR all fields are collected locally
+    if (completionStatus.is_complete || isAllInfoCollected()) {
+      return "Ask me anything about your pathway...";
+    }
+
+    // If we have a next field from the backend
+    if (completionStatus.next_field) {
+      return `Please provide: ${completionStatus.next_field}`;
+    }
+
+    // Default fallback
+    return "Type your message...";
+  };
+
   const handleSendMessage = async (messageText) => {
     if (!messageText.trim() || isLoading) return;
 
@@ -365,13 +389,7 @@ const ChatInterface = ({
           <ChatInput
             onSendMessage={handleSendMessage}
             disabled={isLoading}
-            placeholder={
-              completionStatus.is_complete
-                ? "Ask me anything about your pathway..."
-                : completionStatus.next_field
-                ? `Please provide: ${completionStatus.next_field}`
-                : "Type your message..."
-            }
+            placeholder={getPlaceholderText()}
           />
         </motion.div>
       </div>
