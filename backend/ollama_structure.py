@@ -119,18 +119,6 @@ class SimpleInstructorChat:
         """Get natural language response"""
         next_field = self.collected_info.get_next_field()
         next_name = self.field_names.get(next_field, "All information collected")
-        # if next_field is None:
-        #     context = f"""
-        #     Currently collected:
-        #     - First university: {self.collected_info.u1}
-        #     - First course: {self.collected_info.c1}
-        #     - Second university: {self.collected_info.u2}
-        #     - Second course: {self.collected_info.c2}
-        #
-        #     If the user asks for summary of the collected information, provide it in a structured format.
-        #     Otherwise, do not provide any other information and just respond with a generic message saying: "We will get back to you soon with the information."
-        # """
-        # else:
         context = f"""
         You are here to collect information for course equivalence between two universities.
         Your only task to to collect the information needed to compare courses.
@@ -247,14 +235,6 @@ def main():
 
             # Display response
             print(f"\nAssistant: {response.message}")
-
-            # Show progress
-            info = response.collected_info
-            print(f"\n--- Progress ---")
-            print(f"✅ First University: {info.u1 or '❌ Not collected'}")
-            print(f"✅ First Course: {info.c1 or '❌ Not collected'}")
-            print(f"✅ Second University: {info.u2 or '❌ Not collected'}")
-            print(f"✅ Second Course: {info.c2 or '❌ Not collected'}")
 
             # Save when complete
             if response.is_complete:
