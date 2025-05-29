@@ -48,7 +48,7 @@ Current collected information:
 Next required information: {next_field}
 
 After collecting all information, summarize and ask for confirmation.
-Once confirmed, provide a summary of the collected information and suggest next steps.
+Once confirmed, provide a summary of the collected information and let them know we will get back to them soon with the course equivalency results.
 """
 
     def initialize_chat(self, chat_id: str) -> Dict:
@@ -200,7 +200,7 @@ Once confirmed, provide a summary of the collected information and suggest next 
             "messages": self.messages,
             "stream": False,
             "options": {
-                "temperature": 0.1,
+                "temperature": 0.4,
             },
         }
 
