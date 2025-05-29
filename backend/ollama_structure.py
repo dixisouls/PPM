@@ -95,6 +95,7 @@ class SimpleInstructorChat:
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 response_model=InformationUpdate,
+                temperature=0.0,
             )
             print(response)
             return response
@@ -108,8 +109,8 @@ class SimpleInstructorChat:
         next_name = self.field_names.get(next_field, "all information")
 
         context = f"""
-        You are a university course advisor collecting information from a student.
-
+        You are here to collect information for course equivalence between two universities.
+        
         Currently collected:
         - First university: {self.collected_info.u1 or 'Still needed'}
         - First course: {self.collected_info.c1 or 'Still needed'}
@@ -120,6 +121,7 @@ class SimpleInstructorChat:
 
         Respond conversationally. Ask for the next piece of information if needed.
         Be encouraging and helpful.
+        After you have all information, let the user know you have everything you need and will get back to them soon.
         """
 
         try:
@@ -129,7 +131,8 @@ class SimpleInstructorChat:
                     {"role": "system", "content": context},
                     {"role": "user", "content": user_message}
                 ],
-                response_model=None  # Regular text response
+                response_model=None,
+                temperature=0.0,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -169,8 +172,6 @@ class SimpleInstructorChat:
         with open(filename, "w") as f:
             json.dump(data, f, indent=2)
 
-        return filename
-
 
 def main():
     print("University Information Collector (Instructor Version)")
@@ -209,9 +210,7 @@ def main():
 
             # Save when complete
             if response.is_complete:
-                filename = chat.save_info()
-                print(f"\n🎉 All information collected! Saved to: {filename}")
-
+                chat.save_info()
         except Exception as e:
             print(f"Error: {e}")
 
