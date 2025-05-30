@@ -67,12 +67,27 @@ class SimpleInstructorChat:
         self.chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.collected_info = CollectedInfo()
 
+        # Simple chat history - just a list of messages
+        self.chat_history = []
+
         self.field_names = {
             "u1": "First University name",
             "c1": "First University course",
             "u2": "Second University name",
             "c2": "Second University course",
         }
+
+    def _add_to_history(self, role: str, content: str):
+        """Add message to chat history"""
+        self.chat_history.append({"role": role, "content": content})
+
+        # Keep only last 20 messages to avoid context getting too long
+        if len(self.chat_history) > 20:
+            self.chat_history = self.chat_history[-20:]
+
+    def _get_recent_history(self, last_n: int = 6) -> List[dict]:
+        """Get recent chat history for context"""
+        return self.chat_history[-last_n:] if self.chat_history else []
 
     def _extract_information(self, user_message: str) -> InformationUpdate:
         """Extract information using instructor"""
@@ -119,13 +134,15 @@ class SimpleInstructorChat:
         """Get natural language response"""
         next_field = self.collected_info.get_next_field()
         next_name = self.field_names.get(next_field, "All information collected")
+
         context = f"""
         Your only task to to collect the information needed. Do not ask for anything else except for the four pieces of information below.
         !IMPORTANT: Do not make assumptions about the user's information or intent.
         !IMPORTANT: After all the information is collected, summarize it and say "We will get back to you soon."
-        !IMPORTANT: If you have all the information, do not ask for more, just summarize and respond with "We will get back to you soon."
+        !IMPORTANT: If the user asks for the summary, provide it in a concise format.
+        !IMPORTANT: After all information is collected, do not answer any other questions except for the summary. Just say "We will get back to you soon."
         !IMPORTANT: Except for the information below, do not ask for any other information at all.
-        
+
         Only collect one piece of information at a time.
         Currently collected:
         - First university: {self.collected_info.u1 or 'Still needed'}
@@ -135,18 +152,23 @@ class SimpleInstructorChat:
 
         Next information needed: {next_name}
         !IMPORTANT: Let the user know what information you need next.
-        !IMPORTANT: If you have all the information, do not ask for more, just summarize and respond with "We will get back to you soon."
-        Ask nothing else.
         If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
         """
 
         try:
+            # Build messages with chat history for context
+            messages = [{"role": "system", "content": context}]
+
+            # Add recent chat history
+            recent_history = self._get_recent_history()
+            messages.extend(recent_history)
+
+            # Add current user message
+            messages.append({"role": "user", "content": user_message})
+
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": context},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
                 response_model=None,
                 temperature=0.5,
                 top_p=0.8,
@@ -157,14 +179,17 @@ class SimpleInstructorChat:
 
     def send_message(self, user_message: str) -> AssistantResponse:
         """Process message and return structured response"""
+        # Add user message to history
+        self._add_to_history("user", user_message)
+
         # Extract information if not complete
         if not self.collected_info.is_complete():
             extraction = self._extract_information(user_message)
 
             if (
-                extraction.new_university is None
-                and extraction.new_course is None
-                and not self.collected_info.is_complete()
+                    extraction.new_university is None
+                    and extraction.new_course is None
+                    and not self.collected_info.is_complete()
             ):
                 user_message = f"Invalid input by the user, ask for the next piece of information needed."
 
@@ -192,6 +217,9 @@ class SimpleInstructorChat:
         # Get natural response
         message = self._get_response_message(user_message)
 
+        # Add assistant response to history
+        self._add_to_history("assistant", message)
+
         return AssistantResponse(
             message=message,
             collected_info=self.collected_info,
@@ -218,10 +246,11 @@ def main():
 
     chat = SimpleInstructorChat()
 
-    print(
-        "Assistant: Hi! I need to collect information about two universities and courses you're interested in."
-    )
-    print("Let's start with the name of your first university.")
+    initial_message = "Hi! I need to collect information about two universities and courses you're interested in. Let's start with the name of your first university."
+    print(f"Assistant: {initial_message}")
+
+    # Add initial message to history
+    chat._add_to_history("assistant", initial_message)
 
     while True:
         user_input = input(f"\nYou: ").strip()
