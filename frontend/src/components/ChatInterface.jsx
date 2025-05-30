@@ -71,7 +71,7 @@ const ChatInterface = ({
           (conv) => [
             {
               id: `${conv.id}-user`,
-              message: conv.human_response,
+              message: conv.user_input,
               isUser: true,
               timestamp: conv.timestamp,
               isNew: false,
@@ -110,7 +110,7 @@ const ChatInterface = ({
 
   // Helper function to check if all required info is collected
   const isAllInfoCollected = () => {
-    const requiredFields = ["U1", "C1", "U2", "C2"];
+    const requiredFields = ["u1", "c1", "u2", "c2"]; // Changed from uppercase to lowercase
     return requiredFields.every(
       (field) => collectedInfo[field] && collectedInfo[field].trim() !== ""
     );
@@ -292,7 +292,7 @@ const ChatInterface = ({
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">
-                  Course Advisor Chat
+                  Course Equivalence Chat
                 </h2>
                 <p className="text-sm text-gray-500">
                   Chat ID: {chatId.slice(0, 8)}...

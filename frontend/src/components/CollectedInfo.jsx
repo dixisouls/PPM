@@ -16,25 +16,25 @@ const CollectedInfo = ({
 }) => {
   const fields = [
     {
-      key: "U1",
+      key: "u1", // Changed from "U1" to "u1"
       label: "First University",
       icon: Building2,
       placeholder: "Enter first university name...",
     },
     {
-      key: "C1",
+      key: "c1", // Changed from "C1" to "c1"
       label: "First Course",
       icon: BookOpen,
       placeholder: "Enter first course name...",
     },
     {
-      key: "U2",
+      key: "u2", // Changed from "U2" to "u2"
       label: "Second University",
       icon: GraduationCap,
       placeholder: "Enter second university name...",
     },
     {
-      key: "C2",
+      key: "c2", // Changed from "C2" to "c2"
       label: "Second Course",
       icon: Award,
       placeholder: "Enter second course name...",
@@ -266,19 +266,19 @@ const CollectedInfo = ({
             transition={{ delay: 0.7 }}
           >
             <h4 className="text-xs font-semibold text-gray-900 mb-1">
-              Pathway Summary
+              Course Equivalence Summary
             </h4>
             <div className="space-y-0.5 text-xs text-gray-600">
               <div className="flex items-center justify-between">
-                <span>From:</span>
+                <span>First:</span>
                 <span className="font-medium text-gray-800 text-right flex-1 ml-2 break-words">
-                  {collectedInfo.U1} • {collectedInfo.C1}
+                  {collectedInfo.u1} • {collectedInfo.c1}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>To:</span>
+                <span>Second:</span>
                 <span className="font-medium text-gray-800 text-right flex-1 ml-2 break-words">
-                  {collectedInfo.U2} • {collectedInfo.C2}
+                  {collectedInfo.u2} • {collectedInfo.c2}
                 </span>
               </div>
             </div>
