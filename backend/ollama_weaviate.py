@@ -107,7 +107,7 @@ class WeaviateVectorDB:
             print(f"Error adding conversation to Weaviate: {e}")
             return False
 
-    def search_similar(self, chat_id: str, query: str, limit: int = 3) -> List[dict]:
+    def search_similar(self, chat_id: str, query: str, limit: int = 1) -> List[dict]:
         """Search for similar conversations in this chat"""
         try:
             collection = self.client.collections.get(self.collection_name)
@@ -333,7 +333,11 @@ class StructuredOllamaChat:
                     )
 
         # Get natural response
-        response_message = self._get_response_message(user_message)
+        similar = self.db.search_similar(self.chat_id, user_message)
+        if similar:
+            response_message = similar[0]["assistant_response"]
+        else:
+            response_message = self._get_response_message(user_message)
 
         # Add assistant response to history
         self._add_to_history("assistant", response_message)
