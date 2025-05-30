@@ -160,8 +160,11 @@ class StructuredOllamaChat:
         IMPORTANT RULES:
         - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned
         - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned
+        - Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "Videography"
+        - University examples: "Stanford", "MIT", "San Francisco State University", "San Jose State University"
         - Set confidence HIGH (0.8+) if information is clearly present
         - Set field_to_update to: {next_field_key}
+        - Focus ONLY on the next needed field type: {next_field}
         """
 
         try:
