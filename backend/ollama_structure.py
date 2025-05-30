@@ -120,13 +120,13 @@ class SimpleInstructorChat:
         next_field = self.collected_info.get_next_field()
         next_name = self.field_names.get(next_field, "All information collected")
         context = f"""
-        You are here to collect information for course equivalence between two universities.
-        Your only task to to collect the information needed to compare courses.
-        Do not provide any other information or make assumptions about the user's intent.
-        Be friendly and professional.
-        !IMPORTANT: After all the information is collected, summarize it and say "We will get back to you soon." Do not provide any other information or ask for anything else.
-        Your primary goal is to collect the following information:
+        Your only task to to collect the information needed.
+        !IMPORTANT: Do not make assumptions about the user's information or intent.
+        !IMPORTANT: After all the information is collected, summarize it and say "We will get back to you soon."
+        !IMPORTANT: If you have all the information, do not ask for more, just summarize and respond with "We will get back to you soon."
+        !IMPORTANT: Except for the information below, do not ask for any other information at all.
         
+        Only collect one piece of information at a time.
         Currently collected:
         - First university: {self.collected_info.u1 or 'Still needed'}
         - First course: {self.collected_info.c1 or 'Still needed'}
@@ -134,12 +134,7 @@ class SimpleInstructorChat:
         - Second course: {self.collected_info.c2 or 'Still needed'}
 
         Next information needed: {next_name}
-        Don't make assumptions about the user's intent.
-        
-        If all information has been collected (i.e., next_name is "All information collected"), the response will be: "We will get back to you soon."
-        If the user then asks for a summary after all information is collected, return the summary all the information collected.
-        
-        
+        !IMPORTANT: Let the user know what information you need next.
         """
 
         try:
@@ -151,6 +146,7 @@ class SimpleInstructorChat:
                 ],
                 response_model=None,
                 temperature=0.5,
+                top_p=0.8,
             )
             return response.choices[0].message.content
         except Exception as e:
