@@ -181,6 +181,9 @@ class StructuredOllamaChat:
         # Initialize Weaviate DB
         self.db = WeaviateVectorDB()
 
+        # Simple chat history - just a list of messages (fetched from Weaviate)
+        self.chat_history = []
+
         # Field mappings
         self.field_names = {
             "u1": "First University name",
@@ -190,6 +193,19 @@ class StructuredOllamaChat:
         }
 
         print(f"Chat ID: {self.chat_id}")
+
+    def _add_to_history(self, role: str, content: str):
+        """Add message to chat history and Weaviate"""
+        # Add to local history
+        self.chat_history.append({"role": role, "content": content})
+
+        # Keep only last 20 messages to avoid context getting too long
+        if len(self.chat_history) > 20:
+            self.chat_history = self.chat_history[-20:]
+
+    def _get_recent_history(self, last_n: int = 6) -> List[dict]:
+        """Get recent chat history for context"""
+        return self.chat_history[-last_n:] if self.chat_history else []
 
     def _extract_information(self, user_message: str) -> InformationUpdate:
         """Extract information using instructor"""
@@ -213,11 +229,8 @@ class StructuredOllamaChat:
         IMPORTANT RULES:
         - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned
         - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned
-        - Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "Videography"
-        - University examples: "Stanford", "MIT", "San Francisco State University", "San Jose State University"
         - Set confidence HIGH (0.8+) if information is clearly present
         - Set field_to_update to: {next_field}
-        - Focus ONLY on the next needed field type: {next_field}
         """
 
         try:
@@ -233,48 +246,50 @@ class StructuredOllamaChat:
             return InformationUpdate(confidence=0.0)
 
     def _get_response_message(self, user_message: str) -> str:
-        """Get natural language response using Weaviate for context"""
-        # Check for similar conversations first
-        similar_convos = self.db.search_similar(self.chat_id, user_message, limit=2)
-
-        context_from_history = ""
-        if similar_convos:
-            context_from_history = "\n\nRecent similar conversation context:\n"
-            for conv in similar_convos[:1]:  # Use only the most similar
-                context_from_history += (
-                    f"Previous: {conv['user_input']} -> {conv['assistant_response']}\n"
-                )
-
+        """Get natural language response"""
         next_field = self.collected_info.get_next_field()
         next_name = self.field_names.get(next_field, "All information collected")
 
         context = f"""
-        Your task is to collect university course information. Be conversational and helpful.
+            Your only task is to collect the information needed. Do not ask for anything else except for the four pieces of information below.
 
-        Currently collected:
-        - First university: {self.collected_info.u1 or 'Still needed'}
-        - First course: {self.collected_info.c1 or 'Still needed'}
-        - Second university: {self.collected_info.u2 or 'Still needed'}
-        - Second course: {self.collected_info.c2 or 'Still needed'}
+            IMPORTANT: Do not make assumptions about the user's information or intent.
+            IMPORTANT: After all information is collected, summarize it and say "We will get back to you soon."
+            IMPORTANT: If the user asks for the summary, provide it in a concise format.
+            IMPORTANT: After all information is collected, do not answer any other questions. Just summarize the collected information and say "We will get back to you soon."
+            IMPORTANT: Except for the information below, do not ask for any other information at all.
 
-        Next information needed: {next_name}
+            Only collect one piece of information at a time.
 
-        {context_from_history}
+            Currently collected:
+            - First university: {self.collected_info.u1 or 'Still needed'}
+            - First course: {self.collected_info.c1 or 'Still needed'}
+            - Second university: {self.collected_info.u2 or 'Still needed'}
+            - Second course: {self.collected_info.c2 or 'Still needed'}
 
-        If all information is collected, summarize it clearly.
-        Do not answer any other questions or provide unrelated information.
-        After collecting all information, only provide a summary and respond with " We will get back to you soon."
-        """
+            Next information needed: {next_name}
+
+            IMPORTANT: Let the user know what information you need next.
+            If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
+            """
 
         try:
+            # Build messages with chat history for context
+            messages = [{"role": "system", "content": context}]
+
+            # Add recent chat history
+            recent_history = self._get_recent_history()
+            messages.extend(recent_history)
+
+            # Add current user message
+            messages.append({"role": "user", "content": user_message})
+
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": context},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
                 response_model=None,
-                temperature=0.7,
+                temperature=0.9,
+                top_p=0.8,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -282,23 +297,22 @@ class StructuredOllamaChat:
 
     def send_message(self, user_message: str) -> dict:
         """Process message and return response"""
-        # Check for cached/similar response first
-        similar = self.db.search_similar(self.chat_id, user_message, limit=1)
-        if similar and similar[0]["distance"] < 0.1:  # Very similar query
-            print("[CACHED RESPONSE]")
-            return {
-                "response": similar[0]["assistant_response"],
-                "collected_info": self.collected_info.model_dump(),
-                "is_complete": self.collected_info.is_complete(),
-                "is_cached": True,
-            }
+        # Add user message to history
+        self._add_to_history("user", user_message)
 
         # Extract information if not complete
         if not self.collected_info.is_complete():
             extraction = self._extract_information(user_message)
 
+            if (
+                extraction.new_university is None
+                and extraction.new_course is None
+                and not self.collected_info.is_complete()
+            ):
+                user_message = f"Invalid input by the user, ask for the next piece of information needed."
+
             # Update collected info if extraction is confident
-            if extraction.confidence > 0.7 and extraction.field_to_update:
+            if extraction.confidence > 0.5 and extraction.field_to_update:
                 if extraction.new_university and extraction.field_to_update in [
                     "u1",
                     "u2",
@@ -320,6 +334,9 @@ class StructuredOllamaChat:
 
         # Get natural response
         response_message = self._get_response_message(user_message)
+
+        # Add assistant response to history
+        self._add_to_history("assistant", response_message)
 
         # Store conversation in Weaviate
         self.db.add_conversation(self.chat_id, user_message, response_message)
@@ -364,8 +381,11 @@ def main():
 
     chat = StructuredOllamaChat()
 
-    initial_message = "Hi! I need to collect information about two universities and courses. Let's start with your first university name."
+    initial_message = "Hi! I need to collect information about two universities and courses you're interested in. Let's start with the name of your first university."
     print(f"Assistant: {initial_message}")
+
+    # Add initial message to history
+    chat._add_to_history("assistant", initial_message)
 
     while True:
         user_input = input(f"\n[{chat.chat_id[:8]}] You: ").strip()
@@ -392,8 +412,7 @@ def main():
             result = chat.send_message(user_input)
 
             # Display response
-            cached_indicator = " [CACHED]" if result["is_cached"] else ""
-            print(f"\nAssistant{cached_indicator}: {result['response']}")
+            print(f"\nAssistant: {result['response']}")
 
             # Show progress
             info = result["collected_info"]
