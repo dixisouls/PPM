@@ -136,24 +136,27 @@ class SimpleInstructorChat:
         next_name = self.field_names.get(next_field, "All information collected")
 
         context = f"""
-        Your only task to to collect the information needed. Do not ask for anything else except for the four pieces of information below.
-        !IMPORTANT: Do not make assumptions about the user's information or intent.
-        !IMPORTANT: After all the information is collected, summarize it and say "We will get back to you soon."
-        !IMPORTANT: If the user asks for the summary, provide it in a concise format.
-        !IMPORTANT: After all information is collected, do not answer any other questions except for the summary. Just say "We will get back to you soon."
-        !IMPORTANT: Except for the information below, do not ask for any other information at all.
-
-        Only collect one piece of information at a time.
-        Currently collected:
-        - First university: {self.collected_info.u1 or 'Still needed'}
-        - First course: {self.collected_info.c1 or 'Still needed'}
-        - Second university: {self.collected_info.u2 or 'Still needed'}
-        - Second course: {self.collected_info.c2 or 'Still needed'}
-
-        Next information needed: {next_name}
-        !IMPORTANT: Let the user know what information you need next.
-        If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
-        """
+            Your only task is to collect the information needed. Do not ask for anything else except for the four pieces of information below.
+            
+            IMPORTANT: Do not make assumptions about the user's information or intent.
+            IMPORTANT: After all information is collected, summarize it and say "We will get back to you soon."
+            IMPORTANT: If the user asks for the summary, provide it in a concise format.
+            IMPORTANT: After all information is collected, do not answer any other questions. Just summarize the collected information and say "We will get back to you soon."
+            IMPORTANT: Except for the information below, do not ask for any other information at all.
+            
+            Only collect one piece of information at a time.
+            
+            Currently collected:
+            - First university: {self.collected_info.u1 or 'Still needed'}
+            - First course: {self.collected_info.c1 or 'Still needed'}
+            - Second university: {self.collected_info.u2 or 'Still needed'}
+            - Second course: {self.collected_info.c2 or 'Still needed'}
+            
+            Next information needed: {next_name}
+            
+            IMPORTANT: Let the user know what information you need next.
+            If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
+            """
 
         try:
             # Build messages with chat history for context
@@ -170,7 +173,7 @@ class SimpleInstructorChat:
                 model=self.model,
                 messages=messages,
                 response_model=None,
-                temperature=0.5,
+                temperature=0.9,
                 top_p=0.8,
             )
             return response.choices[0].message.content
