@@ -120,7 +120,7 @@ class SimpleInstructorChat:
         next_field = self.collected_info.get_next_field()
         next_name = self.field_names.get(next_field, "All information collected")
         context = f"""
-        Your only task to to collect the information needed.
+        Your only task to to collect the information needed. Do not ask for anything else except for the four pieces of information below.
         !IMPORTANT: Do not make assumptions about the user's information or intent.
         !IMPORTANT: After all the information is collected, summarize it and say "We will get back to you soon."
         !IMPORTANT: If you have all the information, do not ask for more, just summarize and respond with "We will get back to you soon."
@@ -135,6 +135,9 @@ class SimpleInstructorChat:
 
         Next information needed: {next_name}
         !IMPORTANT: Let the user know what information you need next.
+        !IMPORTANT: If you have all the information, do not ask for more, just summarize and respond with "We will get back to you soon."
+        Ask nothing else.
+        If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
         """
 
         try:
