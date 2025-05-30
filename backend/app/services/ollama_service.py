@@ -1,299 +1,355 @@
-import requests
 import json
 import os
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from .weaviate_service import ConversationVectorDB
+from pydantic import BaseModel, Field
+from openai import OpenAI
+import instructor
+
+from app.models import CollectedInfo
+from app.services.weaviate_service import WeaviateVectorDB
 
 
-class OllamaChat:
+class InformationUpdate(BaseModel):
+    """Model for extracting new information from user input"""
+    new_university: Optional[str] = Field(
+        None, description="New university name mentioned"
+    )
+    new_course: Optional[str] = Field(
+        None, description="New course name mentioned"
+    )
+    field_to_update: Optional[str] = Field(
+        None, description="Which field should be updated: u1, c1, u2, or c2"
+    )
+    confidence: float = Field(
+        description="Confidence level 0-1 that information was extracted correctly"
+    )
+
+
+class StructuredOllamaChat:
+    """Enhanced chat class with structured information extraction"""
+
     def __init__(self):
+        # Get Ollama URL from environment
+        ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+
+        print(f"Initializing Ollama client with URL: {ollama_url}")
+
+        # Setup instructor client with Ollama
+        self.client = instructor.from_openai(
+            OpenAI(
+                base_url=f"{ollama_url}/v1",
+                api_key="ollama",
+            ),
+            mode=instructor.Mode.JSON,
+        )
+
         self.model = "gemma3:4b"
-        # Get Ollama URL from environment variable, default to localhost
-        self.base_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        self.messages = []
-        self.db = ConversationVectorDB()
+        self.chat_id = str(uuid.uuid4())
+        self.collected_info = CollectedInfo()
+        self.created_at = datetime.now().isoformat()
 
-        self.collected_info = {
-            "U1": None,
-            "C1": None,
-            "U2": None,
-            "C2": None,
-        }
-        self.field_order = ["U1", "C1", "U2", "C2"]
+        # Initialize Weaviate DB
+        self.db = WeaviateVectorDB()
+
+        # Chat history for context
+        self.chat_history = []
+
+        # Field mappings
         self.field_names = {
-            "U1": "First university name",
-            "C1": "First university course",
-            "U2": "Second university name",
-            "C2": "Second university course",
+            "u1": "First University name",
+            "c1": "First University course",
+            "u2": "Second University name",
+            "c2": "Second University course",
         }
 
-        self.system_message = """
-You are a university course advisor assistant. Your task is to collect exactly 4 pieces of information from students:
-1. First university name (U1)
-2. First university course (C1)
-3. Second university name (U2)
-4. Second university course (C2)
-
-Guidelines:
-- Ask for one piece of information at a time
-- Be conversational and helpful
-- Confirm each piece of information before moving to the next
-- Keep track of what you've already collected
-- Once all 4 pieces are collected, summarize and ask for final confirmation
-
-Current collected information:
-{collected_info}
-
-Next required information: {next_field}
-
-After collecting all information, summarize and ask for confirmation.
-Once confirmed, provide a summary of the collected information and let them know we will get back to them soon with the course equivalency results.
-"""
+        print(f"🤖 Initialized StructuredOllamaChat - ID: {self.chat_id}")
 
     def initialize_chat(self, chat_id: str) -> Dict:
         """Initialize a new chat session"""
         self.chat_id = chat_id
         self.created_at = datetime.now().isoformat()
-        self.messages = []
-        self.collected_info = {
-            "U1": None,
-            "C1": None,
-            "U2": None,
-            "C2": None,
-        }
-        self._update_system_message()
+        self.chat_history = []
+        self.collected_info = CollectedInfo()
+
+        initial_message = (
+            "Hi! I need to collect information about two universities and courses "
+            "you're interested in. Let's start with the name of your first university."
+        )
+
+        # Add initial message to history
+        self._add_to_history("assistant", initial_message)
+
         return {
             "chat_id": self.chat_id,
             "created_at": self.created_at,
-            "message": "Hello! To get started, please tell me the name of your current university."
+            "message": initial_message
         }
 
     def load_chat_session(self, chat_id: str) -> bool:
         """Load an existing chat session"""
         try:
             self.chat_id = chat_id
-            # Create collected_info directory if it doesn't exist
-            os.makedirs("/app/collected_info", exist_ok=True)
 
-            # Try to load existing collected info from a file
+            # Try to load existing collected info from file
             try:
+                os.makedirs("/app/collected_info", exist_ok=True)
                 with open(f"/app/collected_info/collected_info_{chat_id}.json", "r") as f:
                     data = json.load(f)
-                    self.collected_info = data.get("collected_info", {
-                        "U1": None, "C1": None, "U2": None, "C2": None
-                    })
+                    info_data = data.get("collected_info", {})
+                    self.collected_info = CollectedInfo(**info_data)
                     self.created_at = data.get("created_at", datetime.now().isoformat())
             except FileNotFoundError:
                 # If no saved file, start fresh
-                self.collected_info = {
-                    "U1": None, "C1": None, "U2": None, "C2": None
-                }
+                self.collected_info = CollectedInfo()
                 self.created_at = datetime.now().isoformat()
 
-            self.messages = []
-            self._update_system_message()
+            self.chat_history = []
+            print(f"📂 Loaded chat session: {chat_id}")
             return True
         except Exception as e:
-            print(f"Error loading chat session: {e}")
+            print(f"❌ Error loading chat session: {e}")
             return False
 
-    def _update_system_message(self):
-        collected_str = ""
+    def _add_to_history(self, role: str, content: str):
+        """Add message to chat history"""
+        self.chat_history.append({"role": role, "content": content})
 
-        for field, value in self.collected_info.items():
-            if value:
-                collected_str += f"- {self.field_names[field]}: {value}\n"
-        if not collected_str:
-            collected_str = "None"
+        # Keep only last 20 messages to avoid context getting too long
+        if len(self.chat_history) > 20:
+            self.chat_history = self.chat_history[-20:]
 
-        # Determine the next field to ask for
-        next_field = None
-        for field in self.field_order:
-            if self.collected_info[field] is None:
-                next_field = f"{field} ({self.field_names[field]})"
-                break
-        if next_field is None:
-            next_field = "All information collected - Summarize and confirm"
+    def _get_recent_history(self, last_n: int = 6) -> List[Dict]:
+        """Get recent chat history for context"""
+        return self.chat_history[-last_n:] if self.chat_history else []
 
-        # Update the system message with the current state
-        new_system_message = self.system_message.format(
-            collected_info=collected_str.strip(), next_field=next_field
-        )
+    def _extract_information(self, user_message: str) -> InformationUpdate:
+        """Extract information using instructor"""
+        current_state = self.collected_info.model_dump()
+        next_field = self.collected_info.get_next_field()
 
-        # Add the system message to the conversation
-        if self.messages and self.messages[0]["role"] == "system":
-            self.messages[0]["content"] = new_system_message
+        if self.collected_info.is_complete():
+            return InformationUpdate(confidence=0.0)
+
+        # Determine what field we're looking for
+        next_field_key = None
+        if not self.collected_info.u1:
+            next_field_key = "u1"
+        elif not self.collected_info.c1:
+            next_field_key = "c1"
+        elif not self.collected_info.u2:
+            next_field_key = "u2"
+        elif not self.collected_info.c2:
+            next_field_key = "c2"
+
+        if not next_field_key:
+            return InformationUpdate(confidence=0.0)
+
+        prompt = f"""
+        Analyze this user message for information: "{user_message}"
+
+        Current collected information:
+        - First university (u1): {current_state['u1'] or 'Not collected'}
+        - First course (c1): {current_state['c1'] or 'Not collected'}
+        - Second university (u2): {current_state['u2'] or 'Not collected'}
+        - Second course (c2): {current_state['c2'] or 'Not collected'}
+
+        Next field needed: {next_field_key} ({self.field_names.get(next_field_key, 'unknown')})
+
+        IMPORTANT RULES:
+        - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned
+        - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned
+        - Set confidence HIGH (0.8+) if information is clearly present
+        - Set field_to_update to: {next_field_key}
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                response_model=InformationUpdate,
+                temperature=0.1,
+            )
+            return response
+        except Exception as e:
+            print(f"❌ Extraction error: {e}")
+            return InformationUpdate(confidence=0.0)
+
+    def _get_response_message(self, user_message: str) -> str:
+        """Get natural language response"""
+        next_field = self.collected_info.get_next_field()
+
+        context = f"""
+        Your only task is to collect the information needed. Do not ask for anything else except for the four pieces of information below.
+
+        IMPORTANT: Do not make assumptions about the user's information or intent.
+        IMPORTANT: After all information is collected, summarize it and say "We will get back to you soon."
+        IMPORTANT: If the user asks for the summary, provide it in a concise format.
+        IMPORTANT: After all information is collected, do not answer any other questions. Just summarize the collected information and say "We will get back to you soon."
+        IMPORTANT: Except for the information below, do not ask for any other information at all.
+
+        Only collect one piece of information at a time.
+
+        Currently collected:
+        - First university: {self.collected_info.u1 or 'Still needed'}
+        - First course: {self.collected_info.c1 or 'Still needed'}
+        - Second university: {self.collected_info.u2 or 'Still needed'}
+        - Second course: {self.collected_info.c2 or 'Still needed'}
+
+        Next information needed: {next_field or 'All information collected'}
+
+        IMPORTANT: Let the user know what information you need next.
+        If one piece of information is missing, ask for that piece only and don't make assumptions about the user's information or intent.
+        """
+
+        try:
+            # Build messages with chat history for context
+            messages = [{"role": "system", "content": context}]
+
+            # Add recent chat history
+            recent_history = self._get_recent_history()
+            messages.extend(recent_history)
+
+            # Add current user message
+            messages.append({"role": "user", "content": user_message})
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_model=None,
+                temperature=0.9,
+                top_p=0.8,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"I'm having trouble responding: {e}"
+
+    def send_message(self, user_message: str) -> Dict:
+        """Process message and return structured response"""
+        # Add user message to history
+        self._add_to_history("user", user_message)
+
+        # Extract information if not complete
+        if not self.collected_info.is_complete():
+            extraction = self._extract_information(user_message)
+
+            if (
+                    extraction.new_university is None
+                    and extraction.new_course is None
+                    and not self.collected_info.is_complete()
+            ):
+                user_message = "Invalid input by the user, ask for the next piece of information needed."
+
+            # Update collected info if extraction is confident
+            if extraction.confidence > 0.5 and extraction.field_to_update:
+                if extraction.new_university and extraction.field_to_update in ["u1", "u2"]:
+                    setattr(
+                        self.collected_info,
+                        extraction.field_to_update,
+                        extraction.new_university,
+                    )
+                elif extraction.new_course and extraction.field_to_update in ["c1", "c2"]:
+                    setattr(
+                        self.collected_info,
+                        extraction.field_to_update,
+                        extraction.new_course,
+                    )
+
+        # Check for similar conversations first
+        similar = self.db.search_similar(self.chat_id, user_message)
+        is_cached = False
+        if similar:
+            response_message = similar[0]["assistant_response"]
+            is_cached = True
         else:
-            self.messages.insert(0, {"role": "system", "content": new_system_message})
+            response_message = self._get_response_message(user_message)
 
-    def _extract_and_validate_info(self, user_message, field):
-        user_message = user_message.strip()
-        if field in ["U1", "U2"]:
-            # Validate university name
-            if len(user_message) > 3 and not user_message.isdigit():
-                return user_message
-        elif field in ["C1", "C2"]:
-            # Validate course name
-            if len(user_message) > 3 and not user_message.isdigit():
-                return user_message
-        return None
+        # Add assistant response to history
+        self._add_to_history("assistant", response_message)
 
-    def _get_next_field(self):
-        for field in self.field_order:
-            if self.collected_info[field] is None:
-                return field
-        return None
+        # Store conversation in Weaviate
+        self.db.add_conversation(self.chat_id, user_message, response_message)
+
+        # Save collected info if complete
+        if self.collected_info.is_complete():
+            self.save_info()
+
+        return {
+            "response": response_message,
+            "collected_info": self.collected_info.model_dump(),
+            "is_complete": self.collected_info.is_complete(),
+            "is_cached": is_cached,
+        }
+
+    def get_chat_history(self) -> List[Dict]:
+        """Get full chat history from Weaviate"""
+        return self.db.get_chat_history(self.chat_id)
+
+    def search_similar_conversations(self, query: str, limit: int = 1) -> List[Dict]:
+        """Search for similar conversations"""
+        return self.db.search_similar(self.chat_id, query, limit)
+
+    def get_collected_info(self) -> Dict:
+        """Return collected information"""
+        return self.collected_info.model_dump()
+
+    def get_completion_status(self) -> Dict:
+        """Get completion status"""
+        collected_count = sum(1 for value in self.collected_info.model_dump().values() if value)
+        next_field = self.collected_info.get_next_field()
+
+        return {
+            "is_complete": self.collected_info.is_complete(),
+            "collected_count": collected_count,
+            "total_required": 4,
+            "next_field": next_field
+        }
 
     def save_info(self):
-        """Save the collected information to a file with chat ID"""
+        """Save collected information to JSON file"""
         try:
-            # Create collected_info directory if it doesn't exist
             os.makedirs("/app/collected_info", exist_ok=True)
-
             filename = f"/app/collected_info/collected_info_{self.chat_id}.json"
+
             data = {
                 "chat_id": self.chat_id,
                 "created_at": self.created_at,
-                "collected_info": self.collected_info,
-                "completion_time": datetime.now().isoformat(),
+                "timestamp": datetime.now().isoformat(),
+                "collected_info": self.collected_info.model_dump(),
             }
+
             with open(filename, "w") as f:
-                json.dump(data, f, indent=4)
-            print(f"Saved collected information to {filename}")
+                json.dump(data, f, indent=2)
+            print(f"💾 Saved collected information to {filename}")
         except Exception as e:
-            print(f"Error saving info to file: {e}")
-
-    def send_message(self, user_message: str) -> Tuple[str, bool]:
-        """Send a message and return response with cache status"""
-        # Track completion status before processing message
-        was_complete_before = self.is_collection_complete()
-
-        # Add user message to the conversation
-        self.messages.append({"role": "user", "content": user_message})
-
-        next_field = self._get_next_field()
-        if next_field:
-            extracted_info = self._extract_and_validate_info(user_message, next_field)
-            if extracted_info:
-                # Store the extracted information
-                self.collected_info[next_field] = extracted_info
-                self._update_system_message()
-
-        # Check for similar conversations first
-        similar = self.search_similar_in_chat(user_message)
-        if similar:
-            assistant_content = similar[0]["assistant_response"]
-            # Add assistant message to conversation
-            self.messages.append({"role": "assistant", "content": assistant_content})
-            # Save to database
-            self.db.add_conversation_pair(self.chat_id, user_message, assistant_content)
-
-            # Check if collection just became complete and save if so
-            if not was_complete_before and self.is_collection_complete():
-                self.save_info()
-
-            return assistant_content, True
-
-        data = {
-            "model": self.model,
-            "messages": self.messages,
-            "stream": False,
-            "options": {
-                "temperature": 0.4,
-            },
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-        }
-
-        try:
-            response = requests.post(
-                f"{self.base_url}/api/chat", headers=headers, data=json.dumps(data)
-            )
-            response.raise_for_status()
-
-            if response.status_code == 200:
-                result = response.json()
-                assistant_message = result.get("message", {})
-                assistant_content = assistant_message.get("content", "")
-
-                # Add assistant message to the conversation
-                self.messages.append(
-                    {"role": "assistant", "content": assistant_content}
-                )
-
-                # Save to database with chat ID
-                self.db.add_conversation_pair(
-                    self.chat_id, user_message, assistant_content
-                )
-
-                # Check if collection just became complete and save if so
-                if not was_complete_before and self.is_collection_complete():
-                    self.save_info()
-
-                return assistant_content, False
-            else:
-                return f"Error: {response.status_code} - {response.text}", False
-        except requests.exceptions.ConnectionError:
-            return "Error: Unable to connect to the Ollama server. Please check if it is running.", False
-        except requests.exceptions.RequestException as e:
-            return f"Error: {str(e)}", False
-
-    def search_similar_in_chat(self, query: str, limit: int = 1) -> List[Dict]:
-        """Search for similar conversations within this chat"""
-        return self.db.search_similar_conversations_in_chat(self.chat_id, query, limit)
-
-    def get_collected_info(self) -> Dict:
-        """Return the collected information"""
-        return self.collected_info
-
-    def is_collection_complete(self) -> bool:
-        """Check if all information has been collected"""
-        return all(value is not None for value in self.collected_info.values())
-
-    def get_conversation_history(self) -> List[Dict]:
-        """Retrieve the conversation history for this chat"""
-        return self.db.get_all_conversations(self.chat_id)
-
-    def get_completion_status(self) -> Dict:
-        """Get the completion status of information collection"""
-        collected_count = sum(1 for value in self.collected_info.values() if value is not None)
-        next_field = self._get_next_field()
-        next_field_name = self.field_names.get(next_field) if next_field else None
-
-        return {
-            "is_complete": self.is_collection_complete(),
-            "collected_count": collected_count,
-            "total_required": len(self.field_order),
-            "next_field": next_field_name
-        }
+            print(f"❌ Error saving info: {e}")
 
     def close(self):
-        """Close the database connection"""
+        """Clean up resources"""
         self.db.close()
 
 
 class OllamaChatManager:
-    """Manager class to handle multiple chat sessions"""
+    """Manager for multiple chat sessions"""
 
     def __init__(self):
-        self.active_chats: Dict[str, OllamaChat] = {}
-        self.db = ConversationVectorDB()
+        self.active_chats: Dict[str, StructuredOllamaChat] = {}
+        self.db = WeaviateVectorDB()
+        print("🎯 OllamaChatManager initialized")
 
     def create_chat_session(self) -> Dict:
         """Create a new chat session"""
         chat_id = self.db.create_new_chat_session()
-        chat = OllamaChat()
+        chat = StructuredOllamaChat()
         result = chat.initialize_chat(chat_id)
         self.active_chats[chat_id] = chat
         return result
 
-    def get_or_create_chat(self, chat_id: str) -> OllamaChat:
+    def get_or_create_chat(self, chat_id: str) -> StructuredOllamaChat:
         """Get existing chat or create if not exists"""
         if chat_id not in self.active_chats:
-            chat = OllamaChat()
+            chat = StructuredOllamaChat()
             if chat.load_chat_session(chat_id):
                 self.active_chats[chat_id] = chat
             else:
@@ -302,7 +358,7 @@ class OllamaChatManager:
                 self.active_chats[chat_id] = chat
         return self.active_chats[chat_id]
 
-    def send_message_to_chat(self, chat_id: str, message: str) -> Tuple[str, bool]:
+    def send_message_to_chat(self, chat_id: str, message: str) -> Dict:
         """Send message to specific chat"""
         chat = self.get_or_create_chat(chat_id)
         return chat.send_message(message)
@@ -310,7 +366,7 @@ class OllamaChatManager:
     def get_chat_history(self, chat_id: str) -> List[Dict]:
         """Get conversation history for chat"""
         chat = self.get_or_create_chat(chat_id)
-        return chat.get_conversation_history()
+        return chat.get_chat_history()
 
     def get_collected_info(self, chat_id: str) -> Dict:
         """Get collected information for chat"""
@@ -325,36 +381,24 @@ class OllamaChatManager:
     def search_similar_conversations(self, chat_id: str, query: str, limit: int = 1) -> List[Dict]:
         """Search similar conversations in chat"""
         chat = self.get_or_create_chat(chat_id)
-        return chat.search_similar_in_chat(query, limit)
-
-    def save_chat_info(self, chat_id: str) -> bool:
-        """Manually save collected info for a specific chat"""
-        try:
-            chat = self.get_or_create_chat(chat_id)
-            if chat.is_collection_complete():
-                chat.save_info()
-                return True
-            return False
-        except Exception as e:
-            print(f"Error saving chat info: {e}")
-            return False
+        return chat.search_similar_conversations(query, limit)
 
     def close_chat(self, chat_id: str):
         """Close and remove chat from active chats"""
         if chat_id in self.active_chats:
-            # Save info before closing if complete
             chat = self.active_chats[chat_id]
-            if chat.is_collection_complete():
+            if chat.collected_info.is_complete():
                 chat.save_info()
             chat.close()
             del self.active_chats[chat_id]
+            print(f"🗑️ Closed chat session: {chat_id}")
 
     def close_all_chats(self):
         """Close all active chats"""
         for chat_id, chat in self.active_chats.items():
-            # Save info before closing if complete
-            if chat.is_collection_complete():
+            if chat.collected_info.is_complete():
                 chat.save_info()
             chat.close()
         self.active_chats.clear()
         self.db.close()
+        print("🧹 Closed all chat sessions")

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 from typing import List
 import logging
+
 from app.models import (
     ChatSessionResponse,
     MessageRequest,
@@ -13,6 +14,7 @@ from app.models import (
     SearchResponse,
     SimilarConversation,
     CompletionStatus,
+    ChatStatusResponse,
     ErrorResponse
 )
 from app.services.ollama_service import OllamaChatManager
@@ -32,7 +34,7 @@ __all__ = ["router", "chat_manager"]
 
 @router.post("/sessions", response_model=ChatSessionResponse)
 async def create_chat_session():
-    """Create a new chat session"""
+    """Create a new chat session with structured information extraction"""
     try:
         result = chat_manager.create_chat_session()
         logger.info(f"Created new chat session: {result['chat_id']}")
@@ -49,13 +51,15 @@ async def create_chat_session():
 async def send_message(chat_id: str, request: MessageRequest):
     """Send a message to a specific chat session"""
     try:
-        response, is_cached = chat_manager.send_message_to_chat(chat_id, request.message)
-        logger.info(f"Message sent to chat {chat_id}, cached: {is_cached}")
+        result = chat_manager.send_message_to_chat(chat_id, request.message)
+        logger.info(f"Message sent to chat {chat_id}, cached: {result.get('is_cached', False)}")
 
         return MessageResponse(
-            response=response,
+            response=result["response"],
             chat_id=chat_id,
-            is_cached=is_cached
+            is_cached=result.get("is_cached", False),
+            collected_info=CollectedInfo(**result["collected_info"]),
+            is_complete=result["is_complete"]
         )
     except Exception as e:
         logger.error(f"Error sending message to chat {chat_id}: {e}")
@@ -73,7 +77,13 @@ async def get_conversation_history(chat_id: str):
         logger.info(f"Retrieved {len(conversations)} conversations for chat {chat_id}")
 
         conversation_objects = [
-            ConversationHistory(**conv) for conv in conversations
+            ConversationHistory(
+                id=conv["id"],
+                chat_id=conv["chat_id"],
+                user_input=conv["user_input"],
+                assistant_response=conv["assistant_response"],
+                timestamp=conv["timestamp"]
+            ) for conv in conversations
         ]
 
         return ConversationHistoryResponse(
@@ -120,7 +130,12 @@ async def search_similar_conversations(chat_id: str, request: SearchRequest):
         logger.info(f"Search found {len(results)} similar conversations for chat {chat_id}")
 
         similar_conversations = [
-            SimilarConversation(**result) for result in results
+            SimilarConversation(
+                user_input=result["user_input"],
+                assistant_response=result["assistant_response"],
+                timestamp=result["timestamp"],
+                distance=result["distance"]
+            ) for result in results
         ]
 
         return SearchResponse(
@@ -170,7 +185,7 @@ async def close_chat_session(chat_id: str):
         )
 
 
-@router.get("/sessions/{chat_id}/status")
+@router.get("/sessions/{chat_id}/status", response_model=ChatStatusResponse)
 async def get_chat_status(chat_id: str):
     """Get general status of a chat session"""
     try:
@@ -178,20 +193,18 @@ async def get_chat_status(chat_id: str):
         completion_status = chat_manager.get_completion_status(chat_id)
         conversation_count = len(chat_manager.get_chat_history(chat_id))
 
-        return {
-            "chat_id": chat_id,
-            "conversation_count": conversation_count,
-            "collected_info": collected_info,
-            "is_complete": completion_status["is_complete"],
-            "collected_count": completion_status["collected_count"],
-            "total_required": completion_status["total_required"],
-            "next_field": completion_status["next_field"]
-        }
+        return ChatStatusResponse(
+            chat_id=chat_id,
+            conversation_count=conversation_count,
+            collected_info=CollectedInfo(**collected_info),
+            is_complete=completion_status["is_complete"],
+            collected_count=completion_status["collected_count"],
+            total_required=completion_status["total_required"],
+            next_field=completion_status["next_field"]
+        )
     except Exception as e:
         logger.error(f"Error getting chat status for {chat_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get chat status: {str(e)}"
         )
-
-# Note: Cleanup should be handled at the app level in main.py

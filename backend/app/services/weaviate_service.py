@@ -1,23 +1,24 @@
 import weaviate
+import os
+import uuid
+from datetime import datetime, timezone
+from typing import List, Dict
 from weaviate.classes.config import Configure, Property, DataType
 from weaviate.classes.query import Filter, MetadataQuery, Sort
-import uuid
-import os
-from typing import List, Dict
-from datetime import datetime, timezone
 
 
-class ConversationVectorDB:
-    """A class to manage conversation data in Weaviate with vector search capabilities"""
+class WeaviateVectorDB:
+    """Weaviate client for conversation storage and vector search"""
 
     def __init__(self):
-        # Get Weaviate URL from environment variable, default to localhost
+        # Get Weaviate and Ollama URLs from environment
         weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
-
-        # Get Ollama URL from environment variable, default to localhost
         ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
-        # Parse the URL to get host and port
+        print(f"Connecting to Weaviate at: {weaviate_url}")
+        print(f"Using Ollama at: {ollama_url}")
+
+        # Parse Weaviate URL for connection
         if "://" in weaviate_url:
             protocol, rest = weaviate_url.split("://", 1)
             is_secure = protocol == "https"
@@ -29,12 +30,11 @@ class ConversationVectorDB:
                 host = rest
                 port = 443 if is_secure else 8080
         else:
-            # Fallback for malformed URLs
             host = "localhost"
             port = 8080
             is_secure = False
 
-        # Connect to Weaviate using custom connection
+        # Connect to Weaviate
         try:
             self.client = weaviate.connect_to_custom(
                 http_host=host,
@@ -44,37 +44,41 @@ class ConversationVectorDB:
                 grpc_port=50051,
                 grpc_secure=is_secure
             )
-            print(f"Connected to Weaviate at {host}:{port}")
+            print(f"✅ Connected to Weaviate at {host}:{port}")
         except Exception as e:
-            print(f"Failed to connect to Weaviate at {host}:{port}: {e}")
+            print(f"❌ Failed to connect to Weaviate: {e}")
             raise
 
-        self.collection_name = "ollama_conversation"
+        self.collection_name = "instructor_conversation"
         self.ollama_url = ollama_url
         self._setup_collection()
 
     def _setup_collection(self):
+        """Setup Weaviate collection with proper schema"""
         try:
             if self.client.collections.exists(self.collection_name):
                 print(f"Collection '{self.collection_name}' already exists.")
                 return
 
-            # Use the ollama_url that was set in __init__
-            api_endpoint = self.ollama_url
-            print(f"Setting up collection with Ollama endpoint: {api_endpoint}")
+            print(f"Creating collection with Ollama endpoint: {self.ollama_url}")
 
-            # Create a new collection with chat_id field
+            # Create collection with text2vec-ollama vectorizer
             self.client.collections.create(
                 name=self.collection_name,
                 vectorizer_config=Configure.Vectorizer.text2vec_ollama(
-                    api_endpoint=api_endpoint,
+                    api_endpoint=self.ollama_url,
                     model="nomic-embed-text",
                 ),
                 properties=[
                     Property(
-                        name="chat_id", data_type=DataType.UUID, skip_vectorization=True
+                        name="chat_id",
+                        data_type=DataType.UUID,
+                        skip_vectorization=True
                     ),
-                    Property(name="human_response", data_type=DataType.TEXT),
+                    Property(
+                        name="user_input",
+                        data_type=DataType.TEXT
+                    ),
                     Property(
                         name="assistant_response",
                         data_type=DataType.TEXT,
@@ -87,60 +91,52 @@ class ConversationVectorDB:
                     ),
                 ],
             )
-            print(f"Collection '{self.collection_name}' created successfully.")
+            print(f"✅ Collection '{self.collection_name}' created successfully.")
         except Exception as e:
-            print(f"Error creating collection: {e}")
+            print(f"❌ Error creating collection: {e}")
             raise
 
     def create_new_chat_session(self) -> str:
         """Create a new chat session and return its ID"""
         chat_id = str(uuid.uuid4())
-        print(f"Created new chat session: {chat_id}")
+        print(f"📝 Created new chat session: {chat_id}")
         return chat_id
 
-    def add_conversation_pair(
-            self, chat_id: str, human_response: str, assistant_response: str
-    ) -> bool:
-        """Add a conversation pair to a specific chat session"""
+    def add_conversation(self, chat_id: str, user_input: str, assistant_response: str) -> bool:
+        """Add conversation pair to Weaviate"""
         try:
             collection = self.client.collections.get(self.collection_name)
-            result = collection.data.insert(
+            collection.data.insert(
                 {
                     "chat_id": chat_id,
-                    "human_response": human_response,
+                    "user_input": user_input,
                     "assistant_response": assistant_response,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             )
             return True
         except Exception as e:
-            print(f"Error adding conversation pair to Weaviate: {e}")
+            print(f"❌ Error adding conversation to Weaviate: {e}")
             return False
 
-    def search_similar_conversations_in_chat(
-            self, chat_id: str, query: str, limit: int = 1
-    ) -> List[Dict]:
-        """Search for similar conversations within a specific chat session"""
+    def search_similar(self, chat_id: str, query: str, limit: int = 1) -> List[Dict]:
+        """Search for similar conversations in this chat"""
         try:
             collection = self.client.collections.get(self.collection_name)
 
-            # Do semantic search first, then filter results manually
             response = collection.query.near_text(
                 query=query,
                 limit=limit,
                 filters=Filter.by_property("chat_id").equal(chat_id),
-                distance=0.25,
+                distance=0.3,
                 return_metadata=MetadataQuery(distance=True),
             )
 
-            # Filter results to only this chat_id
             results = []
             for obj in response.objects:
                 results.append(
                     {
-                        "id": str(obj.uuid),
-                        "chat_id": obj.properties["chat_id"],
-                        "human_response": obj.properties["human_response"],
+                        "user_input": obj.properties["user_input"],
                         "assistant_response": obj.properties["assistant_response"],
                         "timestamp": obj.properties.get("timestamp", ""),
                         "distance": obj.metadata.distance,
@@ -148,31 +144,32 @@ class ConversationVectorDB:
                 )
             return results
         except Exception as e:
-            print(f"Error searching similar conversations in chat: {e}")
+            print(f"❌ Error searching conversations: {e}")
             return []
 
-    def get_all_conversations(self, chat_id: str) -> List[Dict]:
-        """Retrieve all conversations for a specific chat session"""
+    def get_chat_history(self, chat_id: str) -> List[Dict]:
+        """Get all conversations for a chat session"""
         try:
             collection = self.client.collections.get(self.collection_name)
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("chat_id").equal(chat_id),
                 sort=Sort.by_property(name="timestamp", ascending=True),
             )
+
             conversations = []
             for obj in response.objects:
                 conversations.append(
                     {
                         "id": str(obj.uuid),
                         "chat_id": obj.properties["chat_id"],
-                        "human_response": obj.properties["human_response"],
+                        "user_input": obj.properties["user_input"],
                         "assistant_response": obj.properties["assistant_response"],
                         "timestamp": obj.properties["timestamp"],
                     }
                 )
             return conversations
         except Exception as e:
-            print(f"Error retrieving conversations: {e}")
+            print(f"❌ Error retrieving chat history: {e}")
             return []
 
     def clear_all_conversations(self) -> bool:
@@ -180,12 +177,16 @@ class ConversationVectorDB:
         try:
             self.client.collections.delete(self.collection_name)
             self._setup_collection()
-            print("Cleared all conversations.")
+            print("🧹 Cleared all conversations.")
             return True
         except Exception as e:
-            print(f"Error clearing all conversations: {e}")
+            print(f"❌ Error clearing conversations: {e}")
             return False
 
     def close(self):
-        """Close the Weaviate client connection"""
-        self.client.close()
+        """Close Weaviate connection"""
+        try:
+            self.client.close()
+            print("🔌 Weaviate connection closed.")
+        except Exception as e:
+            print(f"❌ Error closing Weaviate connection: {e}")
