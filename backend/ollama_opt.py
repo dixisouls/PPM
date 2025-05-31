@@ -125,7 +125,7 @@ class EnhancedInstructorChat:
             mode=instructor.Mode.JSON,
         )
 
-        self.model = "gemma3:4b"
+        self.model = "qwen3:4b"
         self.chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.collected_info = CollectedInfo()
 
@@ -149,7 +149,7 @@ class EnhancedInstructorChat:
             "target_university": "Which university are you planning to transfer to?",
             "target_program": "What program or degree do you want to pursue at the target university?",
             "courses_taken": "Please list the courses you have completed. Provide it as a list.",
-            "completion_terms": "How many terms (semesters/quarters) do you plan to take to complete your target program?",
+            "completion_terms": "In how many terms do you plan to complete your target program? Please provide a number.",
             "areas_of_interest": "What are your academic areas of interest? Please provide them as a list."
         }
 
@@ -173,38 +173,32 @@ class EnhancedInstructorChat:
 
         # Build extraction prompt based on the field type
         field_type_instructions = {
-            "current_university": "Extract university or college name",
-            "current_program": "Extract academic program, major, degree, or field of study",
-            "target_university": "Extract university or college name",
-            "target_program": "Extract academic program, major, degree, or field of study",
+            "current_university": "Extract university or college name, examples are 'San Francisco State University', 'University of California, Berkeley', etc.",
+            "current_program": "Extract academic program, major, degree, or field of study, examples are 'MS in Computer Science', 'BA in History', etc.",
+            "target_university": "Extract university or college name, examples are 'San Francisco State University', 'University of California, Berkeley', etc.",
+            "target_program": "Extract academic program, major, degree, or field of study, examples are 'MS in Computer Science', 'BA in History', etc.",
             "courses_taken": "Extract course names, subjects, or class titles. Return as a list even if only one course is mentioned.",
             "completion_terms": "Extract number of terms, semesters, quarters, or years. Convert to number of terms.",
-            "areas_of_interest": "Extract academic subjects, fields, or areas of interest. Return as a list."
+            "areas_of_interest": "Extract academic subjects, fields, or areas of interest. Return as a list, e.g. 'Artificial Intelligence', 'Environmental Science', etc."
         }
 
         prompt = f"""
         Analyze this user message for information: "{user_message}"
-
-        Current collected information:
-        - Current University: {current_state['current_university'] or 'Not collected'}
-        - Current Program: {current_state['current_program'] or 'Not collected'}
-        - Target University: {current_state['target_university'] or 'Not collected'}
-        - Target Program: {current_state['target_program'] or 'Not collected'}
-        - Courses Taken: {current_state['courses_taken'] or 'Not collected'}
-        - Completion Terms: {current_state['completion_terms'] or 'Not collected'}
-        - Areas of Interest: {current_state['areas_of_interest'] or 'Not collected'}
-
+        You need to extract information about the students academic pathway.
         Next field needed: {next_field} ({self.field_names.get(next_field, 'unknown')})
-
+        
+        Look for the {next_field} information in the message.
+        
         EXTRACTION RULES for {next_field}:
         {field_type_instructions.get(next_field, 'Extract relevant information')}
-
+        
+        Based on the above, extract the information for the field {next_field}.
+        
         IMPORTANT GUIDELINES:
         - Set confidence HIGH (0.8+) if information is clearly present and relevant
         - Set field_to_update to: {next_field}
         - For list fields (courses_taken, areas_of_interest): extract ALL items mentioned
-        - For completion_terms: convert any time references to number of terms/semesters
-        - Only extract {next_field} information, do not assume or infer other fields
+        - Only extract {next_field} information, do not assume or infer other fields, do not provide information about other fields
         """
 
         try:
@@ -239,17 +233,19 @@ class EnhancedInstructorChat:
             - Areas of Interest: {', '.join(self.collected_info.areas_of_interest)}
 
             IMPORTANT: Summarize this information clearly and say "We will get back to you soon with your pathway analysis."
+            IMPORTANT: Do not assume anything else, just summarize what has been collected and inform the user. Do not think of next steps or analysis.
             """
         else:
             # Still collecting information
             context = f"""
-            You are collecting academic pathway information from a student. Your ONLY task is to collect the required information systematically.
+            You are collecting academic pathway information from a student. 
+            IMPORTANT Your ONLY task is to collect the required information systematically.
 
             IMPORTANT GUIDELINES:
             - Collect information in the specified order
             - Ask for ONE piece of information at a time
             - Be encouraging and helpful
-            - Do not make assumptions about the student's information
+            - Do not make assumptions about the student's information or give your own opinions
 
             Currently collected:
             - Current University: {self.collected_info.current_university or 'Still needed'}
@@ -276,7 +272,7 @@ class EnhancedInstructorChat:
                 model=self.model,
                 messages=messages,
                 response_model=None,
-                temperature=0.5,
+                temperature=0.3,
                 top_p=0.9,
             )
             return response.choices[0].message.content
