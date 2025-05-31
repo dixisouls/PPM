@@ -67,7 +67,7 @@ const StartScreen = ({ onStartChat, className = "" }) => {
           className="text-4xl md:text-5xl font-bold mb-8 gradient-text"
           variants={itemVariants}
         >
-          Ollama Chat
+          Course Equivalence Chat
         </motion.h1>
 
         {/* Start Button */}
