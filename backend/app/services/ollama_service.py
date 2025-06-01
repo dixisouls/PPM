@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from openai import OpenAI
 import instructor
-
+import re
 from app.models import CollectedInfo
 from app.services.weaviate_service import WeaviateVectorDB
 
@@ -27,6 +27,20 @@ class InformationUpdate(BaseModel):
     )
 
 
+def strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> tags from text"""
+    if not text:
+        return text
+
+    # Remove think tags and their content
+    pattern = r'<think>.*?</think>'
+    cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL | re.IGNORECASE)
+
+    # Clean up extra whitespace
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+
+    return cleaned_text
+
 class StructuredOllamaChat:
     """Enhanced chat class with structured information extraction"""
 
@@ -45,7 +59,7 @@ class StructuredOllamaChat:
             mode=instructor.Mode.JSON,
         )
 
-        self.model = "gemma3:4b"
+        self.model = "qwen3:4b"
         self.chat_id = str(uuid.uuid4())
         self.collected_info = CollectedInfo()
         self.created_at = datetime.now().isoformat()
@@ -149,19 +163,12 @@ class StructuredOllamaChat:
         prompt = f"""
         Analyze this user message for information: "{user_message}"
 
-        Current collected information:
-        - First university (u1): {current_state['u1'] or 'Not collected'}
-        - First course (c1): {current_state['c1'] or 'Not collected'}
-        - Second university (u2): {current_state['u2'] or 'Not collected'}
-        - Second course (c2): {current_state['c2'] or 'Not collected'}
-
         Next field needed: {next_field_key} ({self.field_names.get(next_field_key, 'unknown')})
+        Only extract information relevant to the next field needed.
 
         IMPORTANT RULES:
-        - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned
-        - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned
-        - Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "Videography"
-        - University examples: "Stanford", "MIT", "San Francisco State University", "San Jose State University"
+        - If looking for a COURSE: Extract any academic subject, major, program, or field of study mentioned, Course examples: "Computer Science", "Data Visualization", "Psychology", "Business Administration", "Videography"
+        - If looking for a UNIVERSITY: Extract any college, university, or institution name mentioned University examples: "Stanford", "MIT", "San Francisco State University", "San Jose State University"
         - Set confidence HIGH (0.8+) if information is clearly present
         - Set field_to_update to: {next_field_key}
         - Focus ONLY on the next needed field type: {next_field}
@@ -183,13 +190,23 @@ class StructuredOllamaChat:
         """Get natural language response"""
         next_field = self.collected_info.get_next_field()
 
-        context = f"""
+        if not next_field:
+            context = f"""
+            All information has been collected.
+            Collected information:
+            - First university: {self.collected_info.u1}
+            - First course: {self.collected_info.c1}
+            - Second university: {self.collected_info.u2}
+            - Second course: {self.collected_info.c2}
+            
+            Summarize this information and say "We will get back to you soon."
+            """
+        else:
+
+            context = f"""
         Your only task is to collect the information needed. Do not ask for anything else except for the four pieces of information below.
 
         IMPORTANT: Do not make assumptions about the user's information or intent.
-        IMPORTANT: After all information is collected, summarize it and say "We will get back to you soon."
-        IMPORTANT: If the user asks for the summary, provide it in a concise format.
-        IMPORTANT: After all information is collected, do not answer any other questions. Just summarize the collected information and say "We will get back to you soon."
         IMPORTANT: Except for the information below, do not ask for any other information at all.
 
         Only collect one piece of information at a time.
@@ -224,7 +241,9 @@ class StructuredOllamaChat:
                 temperature=0.9,
                 top_p=0.8,
             )
-            return response.choices[0].message.content
+            raw_response = response.choices[0].message.content
+            cleaned_response = strip_think_tags(raw_response)
+            return cleaned_response
         except Exception as e:
             return f"I'm having trouble responding: {e}"
 
