@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from openai import OpenAI
 import instructor
-
+import re
 from app.models import CollectedInfo
 from app.services.weaviate_service import WeaviateVectorDB
 
@@ -27,6 +27,21 @@ class InformationUpdate(BaseModel):
     )
 
 
+def strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> tags from text"""
+    if not text:
+        return text
+
+    # Remove think tags and their content
+    pattern = r'<think>.*?</think>'
+    cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL | re.IGNORECASE)
+
+    # Clean up extra whitespace
+    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+
+    return cleaned_text
+
+
 class StructuredOllamaChat:
     """Enhanced chat class with structured information extraction"""
 
@@ -45,7 +60,7 @@ class StructuredOllamaChat:
             mode=instructor.Mode.JSON,
         )
 
-        self.model = "gemma3:4b"
+        self.model = "qwen3:4b"
         self.chat_id = str(uuid.uuid4())
         self.collected_info = CollectedInfo()
         self.created_at = datetime.now().isoformat()
@@ -224,7 +239,10 @@ class StructuredOllamaChat:
                 temperature=0.9,
                 top_p=0.8,
             )
-            return response.choices[0].message.content
+            raw_response = response.choices[0].message.content
+            cleaned_response = strip_think_tags(raw_response)
+
+            return cleaned_response
         except Exception as e:
             return f"I'm having trouble responding: {e}"
 
