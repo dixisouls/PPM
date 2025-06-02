@@ -55,10 +55,19 @@ cd PPM
 ### 2. Start Services
 ```bash
 # Start all services with pre-built images
-docker-compose up -d
+docker compose up -d
 
 # Check service status
-docker-compose ps
+docker compose ps
+```
+
+### 3. For the Pathway Gen Extraction Task
+```bash
+# Start all services with pre-built images
+docker compose -f pathway.yml up -d
+
+# Check service status
+docker compose ps
 ```
 
 ### 3. Access Application
