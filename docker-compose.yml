@@ -30,7 +30,7 @@ services:
 
   # FastAPI Backend
   backend:
-    image: dixisouls/ppm-backend:latest
+    image: dixisouls/ppm-backend-v3 :latest
     container_name: ppm_backend
     ports:
       - "8000:8000"
